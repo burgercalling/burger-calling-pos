@@ -1,0 +1,67 @@
+@media screen {
+  .thermal-print-root {
+    display: none;
+  }
+}
+
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body > *:not(.thermal-print-portal) {
+    display: none !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .thermal-print-root {
+    display: block !important;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #000000;
+    margin: 0 auto;
+    padding: 2mm 2.5mm;
+    box-sizing: border-box;
+  }
+
+  .thermal-width-auto {
+    width: 100%;
+    max-width: 72mm;
+  }
+
+  .thermal-width-80mm {
+    width: 72mm;
+    max-width: 72mm;
+  }
+
+  .thermal-width-58mm {
+    width: 48mm;
+    max-width: 48mm;
+    font-size: 10px;
+  }
+
+  .thermal-divider {
+    border-top: 1px dashed #000000;
+    margin: 4px 0;
+  }
+
+  .kot-page-break {
+    page-break-before: always;
+    break-before: page;
+  }
+}
