@@ -1,9 +1,10 @@
+import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -29,7 +30,7 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
     COOKIE_DOMAIN: str | None = None
 
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     INITIAL_SUPERADMIN_USERNAME: str = Field(..., min_length=3)
     INITIAL_SUPERADMIN_PASSWORD: str = Field(..., min_length=8)
@@ -37,7 +38,12 @@ class Settings(BaseSettings):
 
     UPLOAD_ROOT: str = "app/uploads"
     MAX_UPLOAD_SIZE: int = 5_242_880
-    ALLOWED_IMAGE_TYPES: list[str] = ["jpg", "jpeg", "png", "webp"]
+    ALLOWED_IMAGE_TYPES: Annotated[list[str], NoDecode] = [
+        "jpg",
+        "jpeg",
+        "png",
+        "webp",
+    ]
 
     @property
     def UPLOAD_DIRECTORY(self) -> Path:
@@ -47,14 +53,24 @@ class Settings(BaseSettings):
     @classmethod
     def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            v = value.strip()
+            if not v:
+                return ["http://localhost:3000"]
+            if v.startswith("["):
+                return json.loads(v)
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
         return value
 
     @field_validator("ALLOWED_IMAGE_TYPES", mode="before")
     @classmethod
     def parse_allowed_image_types(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
-            return [ext.strip().lower().lstrip(".") for ext in value.split(",") if ext.strip()]
+            v = value.strip()
+            if not v:
+                return ["jpg", "jpeg", "png", "webp"]
+            if v.startswith("["):
+                return [ext.strip().lower().lstrip(".") for ext in json.loads(v)]
+            return [ext.strip().lower().lstrip(".") for ext in v.split(",") if ext.strip()]
         return [ext.strip().lower().lstrip(".") for ext in value]
 
 
