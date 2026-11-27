@@ -157,7 +157,7 @@ def create_pos_order(
     customer_id: UUID | None = None
     if payload.customer_phone:
         customer = db.scalar(
-            select(Customer).where(Customer.franchise_id == franchise_id, Customer.phone == payload.customer_phone).with_for_update()
+            select(Customer).where(Customer.franchise_id == franchise_id, Customer.phone == payload.customer_phone).with_for_update(of=Order)
         )
         if customer is None:
             customer = Customer(
@@ -211,7 +211,7 @@ def create_pos_order(
                 InventoryItem.deleted_at.is_(None),
             )
             .order_by(InventoryItem.id.asc())
-            .with_for_update()
+            .with_for_update(of=Order)
         ).all()
         inv_by_name = {item.item_name.strip().lower(): item for item in outlet_inv_items}
 
@@ -286,7 +286,7 @@ def void_pos_order(
             select(Order)
             .options(joinedload(Order.items), joinedload(Order.customer))
             .where(Order.id == order_id)
-            .with_for_update()
+            .with_for_update(of=Order)
         )
         .unique()
         .first()
@@ -323,7 +323,7 @@ def void_pos_order(
                 select(InventoryItem)
                 .where(InventoryItem.id.in_(inv_ids))
                 .order_by(InventoryItem.id.asc())
-                .with_for_update()
+                .with_for_update(of=Order)
             ).all()
             inv_map = {item.id: item for item in locked_items}
             for tx in deductions:
@@ -429,7 +429,7 @@ def reprint_order_receipt(
                 joinedload(Order.items), joinedload(Order.customer),
                 joinedload(Order.franchise), joinedload(Order.cashier),
             )
-            .where(Order.id == order_id).with_for_update()
+            .where(Order.id == order_id).with_for_update(of=Order)
         ).unique().first()
     )
     if order is None:

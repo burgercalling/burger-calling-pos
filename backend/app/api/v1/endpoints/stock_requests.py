@@ -70,7 +70,7 @@ def _apply_delivery_credit(
         select(InventoryItem)
         .where(InventoryItem.id.in_(inv_ids))
         .order_by(InventoryItem.id.asc())
-        .with_for_update()
+        .with_for_update(of=StockRequest)
     ).all()
     inv_map = {item.id: item for item in locked_items}
 
@@ -120,7 +120,7 @@ def _reverse_delivery_credit(
         select(InventoryItem)
         .where(InventoryItem.id.in_(inv_ids))
         .order_by(InventoryItem.id.asc())
-        .with_for_update()
+        .with_for_update(of=StockRequest)
     ).all()
     inv_map = {item.id: item for item in locked_items}
 
@@ -171,7 +171,7 @@ def create_stock_request(
     franchise = db.scalar(
         select(Franchise).where(
             Franchise.id == current_user.franchise_id, Franchise.is_active.is_(True), Franchise.deleted_at.is_(None)
-        ).with_for_update()
+        ).with_for_update(of=StockRequest)
     )
     if franchise is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active franchise outlet not found")
@@ -275,7 +275,7 @@ def review_stock_request(
     stock_request = (
         db.scalars(
             select(StockRequest).options(joinedload(StockRequest.items))
-            .where(StockRequest.id == request_id).with_for_update()
+            .where(StockRequest.id == request_id).with_for_update(of=StockRequest)
         ).unique().first()
     )
     if stock_request is None:
@@ -333,7 +333,7 @@ def update_stock_request_status(
     stock_request = (
         db.scalars(
             select(StockRequest).options(joinedload(StockRequest.items))
-            .where(StockRequest.id == request_id).with_for_update()
+            .where(StockRequest.id == request_id).with_for_update(of=StockRequest)
         ).unique().first()
     )
     if stock_request is None:
