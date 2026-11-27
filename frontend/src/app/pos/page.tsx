@@ -645,7 +645,7 @@ export default function PosTerminalPage() {
         </div>
 
         <Sheet open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
-          <SheetContent side="right" className="flex w-full flex-col p-4 sm:max-w-md">
+          <SheetContent className="flex w-full flex-col p-4 sm:max-w-md">
             <SheetHeader className="pb-2">
               <SheetTitle>Current Order ({totalItemsCount} items)</SheetTitle>
             </SheetHeader>
