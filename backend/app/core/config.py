@@ -1,9 +1,10 @@
+﻿import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -29,7 +30,7 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
     COOKIE_DOMAIN: str | None = None
 
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     INITIAL_SUPERADMIN_USERNAME: str = Field(..., min_length=3)
     INITIAL_SUPERADMIN_PASSWORD: str = Field(..., min_length=8)
@@ -37,7 +38,7 @@ class Settings(BaseSettings):
 
     UPLOAD_ROOT: str = "app/uploads"
     MAX_UPLOAD_SIZE: int = 5_242_880
-    ALLOWED_IMAGE_TYPES: list[str] = ["jpg", "jpeg", "png", "webp"]
+    ALLOWED_IMAGE_TYPES: Annotated[list[str], NoDecode] = ["jpg", "jpeg", "png", "webp"]
 
     @property
     def UPLOAD_DIRECTORY(self) -> Path:
@@ -47,14 +48,30 @@ class Settings(BaseSettings):
     @classmethod
     def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            trimmed = value.strip()
+            if trimmed.startswith("["):
+                try:
+                    parsed = json.loads(trimmed)
+                    if isinstance(parsed, list):
+                        return [str(o).strip() for o in parsed if str(o).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [origin.strip() for origin in trimmed.split(",") if origin.strip()]
         return value
 
     @field_validator("ALLOWED_IMAGE_TYPES", mode="before")
     @classmethod
     def parse_allowed_image_types(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
-            return [ext.strip().lower().lstrip(".") for ext in value.split(",") if ext.strip()]
+            trimmed = value.strip()
+            if trimmed.startswith("["):
+                try:
+                    parsed = json.loads(trimmed)
+                    if isinstance(parsed, list):
+                        return [str(ext).strip().lower().lstrip(".") for ext in parsed if str(ext).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [ext.strip().lower().lstrip(".") for ext in trimmed.split(",") if ext.strip()]
         return [ext.strip().lower().lstrip(".") for ext in value]
 
 
