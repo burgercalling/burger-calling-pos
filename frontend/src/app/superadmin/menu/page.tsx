@@ -56,6 +56,7 @@ const MenuProductCard = memo(function MenuProductCard({
               src={resolveMediaUrl(product.image_url) ?? ""}
               alt={product.name}
               loading="lazy"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
               className="h-full w-full object-cover"
             />
           ) : (

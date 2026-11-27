@@ -16,7 +16,7 @@ from app.models.inventory import InventoryChangeType, InventoryItem, InventoryTr
 from app.models.order import Order, OrderItem, OrderStatus, OrderType, PaymentMode
 from app.models.product import Product
 from app.models.setting import Setting
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.pos import (
     CreateOrderRequest,
     OrderReceiptResponse,
@@ -24,7 +24,7 @@ from app.schemas.pos import (
     ReceiptSettingsPayload,
     TodayOrdersSummaryResponse,
 )
-from app.services.audit import get_client_ip
+from app.services.audit import get_client_ip, record_audit_log
 from app.services.billing import generate_atomic_bill_number, get_effective_setting
 
 router = APIRouter(prefix="/pos", tags=["POS Billing"])
@@ -269,6 +269,113 @@ def create_pos_order(
         is_duplicate=False,
         receipt_settings=_build_receipt_settings(order, setting),
     )
+
+
+@router.post("/orders/{order_id}/void", response_model=OrderResponse)
+def void_pos_order(
+    order_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> OrderResponse:
+    if current_user.role not in (UserRole.SUPER_ADMIN, UserRole.FRANCHISE_OWNER):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Super Admin or Franchise Owner can void orders")
+
+    order = (
+        db.scalars(
+            select(Order)
+            .options(joinedload(Order.items), joinedload(Order.customer))
+            .where(Order.id == order_id)
+            .with_for_update()
+        )
+        .unique()
+        .first()
+    )
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    if current_user.role == UserRole.FRANCHISE_OWNER and order.franchise_id != current_user.franchise_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot void bills from another outlet")
+
+    if order.status == OrderStatus.VOIDED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order is already voided")
+
+    order.status = OrderStatus.VOIDED
+
+    # Restore BOM-deducted inventory atomically (preventing duplicate restoration)
+    already_restored = db.scalar(
+        select(InventoryTransaction.id).where(
+            InventoryTransaction.reference_type == "order_void",
+            InventoryTransaction.reference_id == str(order.id),
+        )
+    )
+    if already_restored is None:
+        deductions = db.scalars(
+            select(InventoryTransaction).where(
+                InventoryTransaction.reference_type == "order",
+                InventoryTransaction.reference_id == str(order.id),
+                InventoryTransaction.change_type == InventoryChangeType.SALE_DEDUCTION,
+            )
+        ).all()
+        if deductions:
+            inv_ids = sorted({d.inventory_item_id for d in deductions})
+            locked_items = db.scalars(
+                select(InventoryItem)
+                .where(InventoryItem.id.in_(inv_ids))
+                .order_by(InventoryItem.id.asc())
+                .with_for_update()
+            ).all()
+            inv_map = {item.id: item for item in locked_items}
+            for tx in deductions:
+                restore_qty = abs(tx.quantity_delta)
+                if restore_qty <= Decimal("0.00"):
+                    continue
+                inv_item = inv_map.get(tx.inventory_item_id)
+                if inv_item is None:
+                    continue
+                prev_stock = inv_item.current_stock
+                new_stock = prev_stock + restore_qty
+                inv_item.current_stock = new_stock
+                db.add(
+                    InventoryTransaction(
+                        inventory_item_id=inv_item.id,
+                        franchise_id=order.franchise_id,
+                        performed_by_id=current_user.id,
+                        change_type=InventoryChangeType.RETURN,
+                        quantity_delta=restore_qty,
+                        previous_stock=prev_stock,
+                        balance_after=new_stock,
+                        reference_type="order_void",
+                        reference_id=str(order.id),
+                        remarks=f"Stock restored for voided Bill {order.bill_number}",
+                    )
+                )
+
+    client_ip = get_client_ip(request)
+    record_audit_log(
+        db,
+        actor_user_id=current_user.id,
+        franchise_id=order.franchise_id,
+        action="VOID_ORDER",
+        entity_type="order",
+        entity_id=order.id,
+        old_values={"status": OrderStatus.COMPLETED.value},
+        new_values={"status": OrderStatus.VOIDED.value},
+        ip_address=client_ip,
+    )
+    db.add(
+        ActivityLog(
+            franchise_id=order.franchise_id,
+            user_id=current_user.id,
+            event_type="BILL_VOIDED",
+            description=f"Voided Bill {order.bill_number} and restored BOM stock",
+            ip_address=client_ip,
+            user_agent=request.headers.get("User-Agent"),
+        )
+    )
+    db.commit()
+    db.refresh(order)
+    return OrderResponse.model_validate(order)
 
 
 @router.get("/orders/today", response_model=TodayOrdersSummaryResponse)

@@ -33,15 +33,20 @@ export default function SuperAdminStockRequestsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [reviewTarget, setReviewTarget] = useState<StockRequest | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const requestsQuery = useStockRequests({ status: statusFilter !== "all" ? (statusFilter as StockRequestStatus) : undefined });
   const advanceMutation = useAdvanceStockRequestStatus();
   const requests = requestsQuery.data?.items ?? [];
 
   const handleStatusChange = (id: string, nextStatus: StockRequestStatus) => {
     setActionError(null);
+    setActionSuccess(null);
     advanceMutation.mutate(
       { id, next_status: nextStatus },
       {
+        onSuccess: (updated) => {
+          setActionSuccess(`Request ${updated.request_number} updated to ${updated.status.toUpperCase()}${updated.inventory_applied ? " (Inventory credited)" : ""}.`);
+        },
         onError: (err) => setActionError(err.detail),
       }
     );
@@ -70,6 +75,11 @@ export default function SuperAdminStockRequestsPage() {
           </Select>
         </div>
 
+        {actionSuccess && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            {actionSuccess}
+          </div>
+        )}
         {actionError && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {actionError}

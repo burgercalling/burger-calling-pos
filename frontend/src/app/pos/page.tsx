@@ -63,6 +63,7 @@ const PosProductCard = memo(function PosProductCard({
   qtyInCart: number;
   onAdd: (product: Product) => void;
 }) {
+  const [imgBroken, setImgBroken] = useState(false);
   return (
     <button
       type="button"
@@ -74,11 +75,12 @@ const PosProductCard = memo(function PosProductCard({
       }`}
     >
       <div className="relative h-28 w-full bg-stone-100 dark:bg-stone-800">
-        {product.image_url ? (
+        {product.image_url && !imgBroken ? (
           <img
             src={resolveMediaUrl(product.image_url) ?? ""}
             alt={product.name}
             loading="lazy"
+            onError={() => setImgBroken(true)}
             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           />
         ) : (
@@ -337,6 +339,20 @@ export default function PosTerminalPage() {
                 key={line.product.id}
                 className="flex items-center justify-between gap-2 rounded-lg border border-stone-200 p-2.5 dark:border-stone-800"
               >
+                <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-stone-100 dark:bg-stone-800">
+                  {line.product.image_url ? (
+                    <img
+                      src={resolveMediaUrl(line.product.image_url) ?? ""}
+                      alt={line.product.name}
+                      className="h-full w-full object-cover"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-stone-300">
+                      <Utensils className="h-4 w-4" />
+                    </div>
+                  )}
+                </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-stone-900 dark:text-stone-100">{line.product.name}</p>
                   <p className="text-xs text-stone-500">{formatINR(unitPrice)} each</p>

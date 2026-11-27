@@ -1,12 +1,28 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1"
+).replace(/\/+$/, "");
 
-const BACKEND_ORIGIN = API_BASE_URL.replace(/\/api\/v1\/?$/, "");
+const BACKEND_ORIGIN = API_BASE_URL.replace(/\/api\/v1$/, "");
 
 export function resolveMediaUrl(path: string | null | undefined): string | null {
   if (!path) return null;
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const trimmed = path.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+  let normalized = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  if (normalized.startsWith("/app/uploads/")) {
+    normalized = normalized.replace(/^\/app/, "");
+  } else if (
+    !normalized.startsWith("/uploads/") &&
+    (normalized.startsWith("/products/") ||
+      normalized.startsWith("/categories/") ||
+      normalized.startsWith("/logos/") ||
+      normalized.startsWith("/receipts/"))
+  ) {
+    normalized = `/uploads${normalized}`;
+  }
   return `${BACKEND_ORIGIN}${normalized}`;
 }
 
