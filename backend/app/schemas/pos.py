@@ -50,11 +50,9 @@ class CreateOrderRequest(BaseModel):
         if src in ("swiggy", "zomato"):
             if not self.external_order_number:
                 raise ValueError(f"{src.title()} Order Number is required")
-            if not self.customer_name:
-                raise ValueError(f"Customer Name is required for {src.title()} orders")
         elif src == "takeaway":
-            if not self.customer_name or not self.customer_phone:
-                raise ValueError("Customer Name and Customer Phone are required for Take Away orders")
+            if not self.customer_phone:
+                raise ValueError("Customer Phone is required for Take Away orders")
         return self
 
 

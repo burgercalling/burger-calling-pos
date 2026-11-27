@@ -65,42 +65,56 @@ const PosProductCard = memo(function PosProductCard({
   onAdd: (product: Product) => void;
 }) {
   const [imgBroken, setImgBroken] = useState(false);
+  const [justAdded, setJustAdded] = useState(false);
+
+  const handleClick = () => {
+    onAdd(product);
+    setJustAdded(true);
+    setTimeout(() => setJustAdded(false), 220);
+  };
+
   return (
     <button
       type="button"
-      onClick={() => onAdd(product)}
-      className={`group relative flex flex-col justify-between overflow-hidden rounded-xl border bg-white text-left shadow-xs transition active:scale-[0.97] dark:bg-stone-900 ${
-        qtyInCart > 0
+      onClick={handleClick}
+      className={`group relative flex h-[176px] w-full flex-col overflow-hidden rounded-xl border bg-white text-left shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.96] sm:h-[196px] lg:h-[210px] dark:bg-stone-900 [content-visibility:auto] [contain-intrinsic-size:168px_210px] ${
+        justAdded
+          ? "border-orange-600 ring-2 ring-orange-500/70"
+          : qtyInCart > 0
           ? "border-orange-500 ring-1 ring-orange-500/40"
           : "border-stone-200 hover:border-orange-400 dark:border-stone-800"
       }`}
     >
-      <div className="relative h-28 w-full bg-stone-100 dark:bg-stone-800">
-        {product.image_url && !imgBroken ? (
-          <img
-            src={resolveMediaUrl(product.image_url) ?? ""}
-            alt={product.name}
-            loading="lazy"
-            onError={() => setImgBroken(true)}
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-stone-300">
-            <Utensils className="h-7 w-7" />
-          </div>
-        )}
-        {product.item_type === "combo" && (
-          <Badge className="absolute left-2 top-2 bg-amber-500 text-stone-950 hover:bg-amber-500">Combo</Badge>
-        )}
+      <div className="relative h-[62%] w-full shrink-0 bg-stone-100 p-1.5 dark:bg-stone-800">
+        <div className="h-full w-full overflow-hidden rounded-lg bg-stone-200/70 dark:bg-stone-900">
+          {product.image_url && !imgBroken ? (
+            <img
+              src={resolveMediaUrl(product.image_url) ?? ""}
+              alt={product.name}
+              loading="lazy"
+              decoding="async"
+              onError={() => setImgBroken(true)}
+              className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-stone-400">
+              <Utensils className="h-8 w-8" />
+            </div>
+          )}
+        </div>
         {qtyInCart > 0 && (
-          <Badge className="absolute right-2 top-2 bg-orange-600 text-white hover:bg-orange-600">
+          <Badge className="absolute right-2.5 top-2.5 bg-orange-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm hover:bg-orange-600">
             ×{qtyInCart}
           </Badge>
         )}
       </div>
-      <div className="p-3">
-        <p className="line-clamp-2 text-sm font-semibold text-stone-900 dark:text-stone-100">{product.name}</p>
-        <p className="mt-1 text-sm font-bold text-orange-700 dark:text-orange-400">{formatINR(channelPrice)}</p>
+      <div className="flex flex-1 flex-col justify-between px-2.5 py-2">
+        <p className="line-clamp-2 text-xs font-semibold leading-snug text-stone-900 sm:text-sm dark:text-stone-100">
+          {product.name}
+        </p>
+        <p className="text-base font-extrabold tracking-tight text-orange-700 sm:text-lg dark:text-orange-400">
+          {formatINR(channelPrice)}
+        </p>
       </div>
     </button>
   );
@@ -108,6 +122,7 @@ const PosProductCard = memo(function PosProductCard({
 
 export default function PosTerminalPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const { data: currentUser } = useCurrentUser();
   const logoutMutation = useLogout();
   const categoriesQuery = useCategories(false);
@@ -143,6 +158,10 @@ export default function PosTerminalPage() {
   useEffect(() => {
     setValidationError(null);
   }, [orderSource]);
+
+  useEffect(() => {
+    gridScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [selectedCategoryId, debouncedSearch]);
 
   const categories = categoriesQuery.data ?? [];
   const allProducts = productsQuery.data?.items ?? [];
@@ -199,18 +218,14 @@ export default function PosTerminalPage() {
     setValidationError(null);
 
     if (orderSource === "takeaway") {
-      if (!customerName.trim() || !customerPhone.trim()) {
-        setValidationError("Customer Name and Customer Phone are required for Take Away orders.");
+      if (!customerPhone.trim()) {
+        setValidationError("Customer Phone is required for Take Away orders.");
         return;
       }
     } else if (orderSource === "swiggy" || orderSource === "zomato") {
       const label = orderSource === "swiggy" ? "Swiggy" : "Zomato";
       if (!externalOrderNumber.trim()) {
         setValidationError(`${label} Order Number is required.`);
-        return;
-      }
-      if (!customerName.trim()) {
-        setValidationError(`Customer Name is required for ${label} orders.`);
         return;
       }
     }
@@ -287,7 +302,7 @@ export default function PosTerminalPage() {
           <Input
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
-            placeholder={orderSource === "dine_in" ? "Customer Name (Opt)" : "Customer Name *"}
+            placeholder="Customer Name (Optional)"
             className="h-9 bg-white text-sm dark:bg-stone-950"
           />
           <Input
@@ -484,7 +499,7 @@ export default function PosTerminalPage() {
 
   return (
     <>
-      <div className="no-print flex h-screen flex-col bg-stone-100 dark:bg-stone-950">
+      <div className="no-print flex h-screen flex-col overflow-hidden bg-stone-100 dark:bg-stone-950">
         {/* Top POS Header with Order Source Selector */}
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 bg-white px-4 py-2.5 shadow-xs dark:border-stone-800 dark:bg-stone-900">
           <div className="flex items-center gap-2.5">
@@ -622,7 +637,7 @@ export default function PosTerminalPage() {
               </div>
             )}
 
-            <div className="grid flex-1 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 xl:grid-cols-4">
+            <div ref={gridScrollRef} className="grid flex-1 min-h-0 auto-rows-max content-start grid-cols-2 gap-3 overflow-y-auto scroll-smooth pr-1 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(168px,1fr))]">
               {productsQuery.isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-44 w-full rounded-xl" />)
               ) : (
