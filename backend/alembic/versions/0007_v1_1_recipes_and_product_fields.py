@@ -1,6 +1,6 @@
 """v1.1 add product cost_price, tax_rate, product_recipes, sale_deduction enum & perf indexes
 
-Revision ID: 0007_v1_1_recipes_and_product_fields
+Revision ID: 0007_v1_1_recipes
 Revises: 0006_category_image_url
 Create Date: 2026-11-27 19:10:00.000000
 """
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0007_v1_1_recipes_and_product_fields"
+revision: str = "0007_v1_1_recipes"
 down_revision: Union[str, None] = "0006_category_image_url"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
