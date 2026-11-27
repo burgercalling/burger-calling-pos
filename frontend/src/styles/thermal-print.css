@@ -2,12 +2,16 @@
   .thermal-print-root {
     display: none;
   }
+
+  .print-only {
+    display: none;
+  }
 }
 
 @media print {
   @page {
-    margin: 0;
-    size: auto;
+    margin: 12mm 14mm;
+    size: A4 portrait;
   }
 
   html,
@@ -15,28 +19,108 @@
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
-    color: #000000 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  body > *:not(.thermal-print-portal) {
-    display: none !important;
+    color: #111827 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .no-print {
     display: none !important;
   }
 
-  .thermal-print-root {
+  .print-only {
+    display: block !important;
+  }
+
+  /* Ensure scrollable table wrappers expand fully on paper without clipping */
+  .overflow-x-auto,
+  .overflow-auto {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  /* Business Report Table Styling */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 10.5px !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  thead th {
+    background-color: #1c1917 !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    border: 1px solid #d6d3d1 !important;
+    padding: 6px 8px !important;
+  }
+
+  tbody td {
+    border: 1px solid #e7e5e4 !important;
+    padding: 5px 8px !important;
+    color: #1c1917 !important;
+  }
+
+  tbody tr:nth-child(even) {
+    background-color: #fafaf9 !important;
+  }
+
+  /* Hide thermal receipt when printing normal business reports */
+  body:not(.printing-thermal) .thermal-print-portal,
+  body:not(.printing-thermal) .thermal-print-root {
+    display: none !important;
+  }
+
+  /* Thermal Receipt Mode: isolate ONLY .thermal-print-portal */
+  body.printing-thermal {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.printing-thermal .no-print,
+  body.printing-thermal .print-only,
+  body.printing-thermal aside,
+  body.printing-thermal nav,
+  body.printing-thermal header,
+  body.printing-thermal main {
+    display: none !important;
+  }
+
+  body.printing-thermal .thermal-print-portal {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+  }
+
+  body.printing-thermal .thermal-print-root {
     display: block !important;
     font-family: "Courier New", Courier, monospace;
     font-size: 11px;
     line-height: 1.35;
-    color: #000000;
+    color: #000000 !important;
+    background: #ffffff !important;
     margin: 0 auto;
     padding: 2mm 2.5mm;
     box-sizing: border-box;
+  }
+
+  body.printing-thermal table,
+  body.printing-thermal thead th,
+  body.printing-thermal tbody td,
+  body.printing-thermal tbody tr:nth-child(even) {
+    background: transparent !important;
+    color: #000000 !important;
+    border-left: none !important;
+    border-right: none !important;
+    padding: 2px 1px !important;
   }
 
   .thermal-width-auto {
@@ -57,7 +141,7 @@
 
   .thermal-divider {
     border-top: 1px dashed #000000;
-    margin: 4px 0;
+    margin: 5px 0;
   }
 
   .kot-page-break {

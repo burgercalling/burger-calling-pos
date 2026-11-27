@@ -157,7 +157,7 @@ def create_pos_order(
     customer_id: UUID | None = None
     if payload.customer_phone:
         customer = db.scalar(
-            select(Customer).where(Customer.franchise_id == franchise_id, Customer.phone == payload.customer_phone).with_for_update(of=Order)
+            select(Customer).where(Customer.franchise_id == franchise_id, Customer.phone == payload.customer_phone).with_for_update()
         )
         if customer is None:
             customer = Customer(
@@ -211,7 +211,7 @@ def create_pos_order(
                 InventoryItem.deleted_at.is_(None),
             )
             .order_by(InventoryItem.id.asc())
-            .with_for_update(of=Order)
+            .with_for_update(of=InventoryItem)
         ).all()
         inv_by_name = {item.item_name.strip().lower(): item for item in outlet_inv_items}
 
@@ -323,7 +323,7 @@ def void_pos_order(
                 select(InventoryItem)
                 .where(InventoryItem.id.in_(inv_ids))
                 .order_by(InventoryItem.id.asc())
-                .with_for_update(of=Order)
+                .with_for_update(of=InventoryItem)
             ).all()
             inv_map = {item.id: item for item in locked_items}
             for tx in deductions:

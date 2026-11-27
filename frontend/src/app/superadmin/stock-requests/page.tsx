@@ -1,9 +1,11 @@
 "use client";
 
-import { ArrowRight, CheckCircle2, ClipboardCheck, Loader2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, ClipboardCheck, Loader2, Printer } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PrintReportFooter, PrintReportHeader } from "@/components/print/print-report-chrome";
+import { printBusinessReport } from "@/lib/print";
 import { ReviewStockRequestDialog } from "@/components/stock-requests/review-stock-request-dialog";
 import { StockRequestStatusStepper } from "@/components/stock-requests/status-stepper";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +57,7 @@ export default function SuperAdminStockRequestsPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
+        <PrintReportHeader reportName="Stock Request Fulfillment Report" filtersSummary={`Status Filter: ${statusFilter.toUpperCase()}`} />
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
@@ -64,7 +67,9 @@ export default function SuperAdminStockRequestsPage() {
               Review, update any status, credit outlet inventory on delivery, or reverse/cancel requests safely.
             </p>
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <div className="no-print flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" onClick={() => printBusinessReport()}><Printer className="mr-2 h-4 w-4" />Print Report</Button>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="All Statuses" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
@@ -73,6 +78,7 @@ export default function SuperAdminStockRequestsPage() {
               ))}
             </SelectContent>
           </Select>
+          </div>
         </div>
 
         {actionSuccess && (
@@ -185,6 +191,7 @@ export default function SuperAdminStockRequestsPage() {
           </div>
         )}
         <ReviewStockRequestDialog stockRequest={reviewTarget} onOpenChange={(open) => { if (!open) setReviewTarget(null); }} />
+        <PrintReportFooter />
       </div>
     </AppShell>
   );

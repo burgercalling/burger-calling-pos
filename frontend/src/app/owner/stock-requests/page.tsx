@@ -1,9 +1,11 @@
 "use client";
 
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, Printer } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PrintReportFooter, PrintReportHeader } from "@/components/print/print-report-chrome";
+import { printBusinessReport } from "@/lib/print";
 import { NewStockRequestDialog } from "@/components/stock-requests/new-stock-request-dialog";
 import { StockRequestStatusStepper } from "@/components/stock-requests/status-stepper";
 import { Button } from "@/components/ui/button";
@@ -18,9 +20,10 @@ export default function OwnerStockRequestsPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-5xl space-y-6 p-6">
+        <PrintReportHeader reportName="Outlet Stock Requests Report" />
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div><h1 className="text-2xl font-bold tracking-tight text-stone-900">Outlet Stock Requests</h1><p className="text-sm text-stone-500">Request supplies and track real-time dispatch &amp; delivery status.</p></div>
-          <Button onClick={() => setNewOpen(true)} className="bg-orange-600 hover:bg-orange-700"><Plus className="mr-2 h-4 w-4" />New Stock Request</Button>
+          <div className="no-print flex gap-2"><Button type="button" variant="outline" onClick={() => printBusinessReport()}><Printer className="mr-2 h-4 w-4" />Print</Button><Button onClick={() => setNewOpen(true)} className="bg-orange-600 hover:bg-orange-700"><Plus className="mr-2 h-4 w-4" />New Stock Request</Button></div>
         </div>
         {requestsQuery.isLoading ? (
           <div className="flex items-center justify-center py-16 text-stone-500"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading requests...</div>
@@ -45,6 +48,7 @@ export default function OwnerStockRequestsPage() {
           </div>
         )}
         <NewStockRequestDialog open={newOpen} onOpenChange={setNewOpen} />
+        <PrintReportFooter />
       </div>
     </AppShell>
   );

@@ -1,9 +1,11 @@
 "use client";
 
-import { Activity, AlertTriangle, ArrowRight, Flame, Package, ReceiptText } from "lucide-react";
+import { Activity, AlertTriangle, Printer, ArrowRight, Flame, Package, ReceiptText } from "lucide-react";
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PrintReportFooter, PrintReportHeader } from "@/components/print/print-report-chrome";
+import { printBusinessReport } from "@/lib/print";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,12 +32,14 @@ export default function OwnerDashboardPage() {
         </div>
       ) : (
         <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+          <PrintReportHeader reportName="Outlet Daily Closing & Dashboard Report" subtitle={`Date: ${data.bill_date}`} />
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Outlet Dashboard</h1>
               <p className="text-sm text-stone-500">Live sales &amp; operations for {data.bill_date}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="no-print flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => printBusinessReport()}><Printer className="mr-2 h-4 w-4" />Print Summary</Button>
               <Button asChild variant="outline"><Link href="/owner/inventory">Inventory</Link></Button>
               <Button asChild variant="outline"><Link href="/owner/stock-requests">Request Stock</Link></Button>
               <Button asChild className="bg-orange-600 hover:bg-orange-700"><Link href="/pos">Open Billing POS</Link></Button>
@@ -144,6 +148,7 @@ export default function OwnerDashboardPage() {
               </CardContent>
             </Card>
           </div>
+          <PrintReportFooter />
         </div>
       )}
     </AppShell>

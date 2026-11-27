@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveMediaUrl } from "@/lib/api";
 import { ORDER_SOURCE_LABELS, type OrderReceiptPayload } from "@/types/pos";
 
 export function ThermalReceipt({ receipt, includeKot }: { receipt: OrderReceiptPayload | null; includeKot: boolean }) {
@@ -18,32 +19,48 @@ export function ThermalReceipt({ receipt, includeKot }: { receipt: OrderReceiptP
   const sourceLabel = ORDER_SOURCE_LABELS[sourceKey] ?? sourceKey.replace("_", " ").toUpperCase();
   const customerName = order.customer?.name || order.customer_name_snapshot;
   const customerPhone = order.customer?.phone;
+  const logoSrc = resolveMediaUrl(receipt_settings.logo_url);
 
   return (
     <div className={`thermal-print-root ${widthClass}`}>
       <div className="text-center">
-        <div className="text-sm font-bold uppercase">{receipt_settings.brand_name}</div>
+        {logoSrc && (
+          <img
+            src={logoSrc}
+            alt={receipt_settings.brand_name}
+            className="mx-auto mb-1 h-10 w-auto object-contain"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
+        )}
+        <div className="text-sm font-bold uppercase tracking-wide">{receipt_settings.brand_name}</div>
+        <div className="text-[9px] font-bold uppercase">100% PURE VEGETARIAN</div>
         <div className="text-[10px] font-semibold">{receipt_settings.outlet_name} ({receipt_settings.outlet_code})</div>
         <div className="text-[10px]">{receipt_settings.outlet_address}</div>
         <div className="text-[10px]">Ph: {receipt_settings.outlet_phone}</div>
-        {receipt_settings.tax_enabled && receipt_settings.gstin && <div className="text-[10px]">GSTIN: {receipt_settings.gstin}</div>}
-        {showDuplicate && <div className="mt-1 border border-black py-0.5 text-[10px] font-bold">[DUPLICATE COPY]</div>}
+        {receipt_settings.tax_enabled && receipt_settings.gstin && (
+          <div className="text-[10px] font-semibold">GSTIN: {receipt_settings.gstin}</div>
+        )}
+        {showDuplicate && (
+          <div className="mt-1 border border-black py-0.5 text-[10px] font-bold">[DUPLICATE COPY]</div>
+        )}
       </div>
       <div className="thermal-divider" />
-      <div className="text-[10px]">
+      <div className="space-y-0.5 text-[10px]">
         <div className="flex justify-between">
-          <span>Bill: {order.bill_number}</span>
-          <span className="font-bold uppercase">{sourceLabel}</span>
+          <span><strong>Bill:</strong> {order.bill_number}</span>
+          <span className="border border-black px-1 font-bold uppercase">{sourceLabel}</span>
         </div>
         {order.external_order_number && (
           <div className="font-bold">
             {sourceLabel} Order #: {order.external_order_number}
           </div>
         )}
-        {order.table_number && <div>Table #: {order.table_number}</div>}
+        {order.table_number && <div>Table #: <strong>{order.table_number}</strong></div>}
         <div className="flex justify-between">
           <span>Date: {formattedTime}</span>
-          <span className="uppercase">{order.payment_mode}</span>
+          <span className="font-bold uppercase">{order.payment_mode}</span>
         </div>
         <div>Cashier: {cashier_name}</div>
         {(customerName || customerPhone) && (
@@ -65,9 +82,12 @@ export function ThermalReceipt({ receipt, includeKot }: { receipt: OrderReceiptP
         <tbody>
           {order.items.map((item) => (
             <tr key={item.id}>
-              <td className="py-0.5 pr-1">{item.product_name_snapshot}</td>
-              <td className="py-0.5 text-center">{item.quantity}</td>
-              <td className="py-0.5 text-right">{sym}{item.line_total}</td>
+              <td className="py-0.5 pr-1">
+                {item.product_name_snapshot}
+                <div className="text-[9px] opacity-80">@{sym}{item.unit_price}</div>
+              </td>
+              <td className="py-0.5 text-center align-top">{item.quantity}</td>
+              <td className="py-0.5 text-right align-top">{sym}{item.line_total}</td>
             </tr>
           ))}
         </tbody>
@@ -90,7 +110,10 @@ export function ThermalReceipt({ receipt, includeKot }: { receipt: OrderReceiptP
         </div>
       </div>
       <div className="thermal-divider" />
-      <div className="text-center text-[10px]"><p>{receipt_settings.receipt_footer}</p></div>
+      <div className="space-y-0.5 text-center text-[10px]">
+        <p className="font-semibold">{receipt_settings.receipt_footer}</p>
+        <p className="text-[8px]">Powered by Burger Calling POS</p>
+      </div>
       {includeKot && order.kot_printed && (
         <div className="kot-page-break pt-2">
           <div className="text-center">

@@ -1,9 +1,11 @@
 "use client";
 
-import { Activity, AlertTriangle, Building2, Flame, PackageCheck, TrendingUp } from "lucide-react";
+import { Activity, AlertTriangle, Printer, Building2, Flame, PackageCheck, TrendingUp } from "lucide-react";
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PrintReportFooter, PrintReportHeader } from "@/components/print/print-report-chrome";
+import { printBusinessReport } from "@/lib/print";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +32,7 @@ export default function SuperAdminDashboardPage() {
         </div>
       ) : (
         <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+          <PrintReportHeader reportName="Master Network Daily Closing & Dashboard Report" subtitle={`Date: ${data.bill_date}`} />
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
@@ -37,7 +40,8 @@ export default function SuperAdminDashboardPage() {
               </h1>
               <p className="text-sm text-stone-500">Real-time multi-franchise telemetry for {data.bill_date}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="no-print flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => printBusinessReport()}><Printer className="mr-2 h-4 w-4" />Print Summary</Button>
               <Button asChild variant="outline"><Link href="/superadmin/menu">Manage Menu</Link></Button>
               <Button asChild variant="outline"><Link href="/superadmin/stock-requests">Stock Queue</Link></Button>
               <Button asChild className="bg-orange-600 hover:bg-orange-700"><Link href="/superadmin/reports">All Reports</Link></Button>
@@ -138,6 +142,7 @@ export default function SuperAdminDashboardPage() {
               </CardContent>
             </Card>
           </div>
+          <PrintReportFooter />
         </div>
       )}
     </AppShell>

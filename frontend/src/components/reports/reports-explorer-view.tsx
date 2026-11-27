@@ -23,6 +23,8 @@ import {
   useStockRequestReport,
 } from "@/hooks/use-analytics";
 import { useFranchises } from "@/hooks/use-franchises";
+import { PrintReportFooter, PrintReportHeader } from "@/components/print/print-report-chrome";
+import { printBusinessReport } from "@/lib/print";
 import { formatINR } from "@/types/menu";
 import { ORDER_SOURCE_LABELS } from "@/types/pos";
 
@@ -80,6 +82,10 @@ export function ReportsExplorerView({ mode }: { mode: "superadmin" | "owner" }) 
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+      <PrintReportHeader
+        reportName={TABS.find((t) => t.key === activeTab)?.label ?? "Business Report"}
+        filtersSummary={`Date Range: ${startDate} to ${endDate}${isSuperAdmin ? ` · Outlet: ${franchiseId === "all" ? "All Outlets" : franchiseId}` : ""}`}
+      />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
@@ -90,7 +96,7 @@ export function ReportsExplorerView({ mode }: { mode: "superadmin" | "owner" }) 
           </p>
         </div>
         <div className="no-print flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={() => window.print()}>
+          <Button type="button" variant="outline" onClick={() => printBusinessReport()}>
             <Printer className="mr-1.5 h-4 w-4" />
             Print / PDF
           </Button>
@@ -260,6 +266,7 @@ export function ReportsExplorerView({ mode }: { mode: "superadmin" | "owner" }) 
       {activeTab === "stock-requests" && (
         <Card><CardContent className="overflow-x-auto p-0"><Table><TableHeader><TableRow><TableHead>Request #</TableHead><TableHead>Outlet</TableHead><TableHead>Status</TableHead><TableHead>Requested Qty</TableHead><TableHead>Approved Qty</TableHead></TableRow></TableHeader><TableBody>{(stockReqQuery.data ?? []).map((r) => <TableRow key={r.request_number}><TableCell className="font-mono">{r.request_number}</TableCell><TableCell>{r.outlet_code} · {r.outlet_name}</TableCell><TableCell><Badge variant="outline" className="uppercase">{r.status}</Badge></TableCell><TableCell className="font-mono">{r.requested_qty_total}</TableCell><TableCell className="font-mono">{r.approved_qty_total}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
       )}
+      <PrintReportFooter />
     </div>
   );
 }

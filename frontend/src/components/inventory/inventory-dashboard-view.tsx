@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Boxes, CheckCircle2, Download, History, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Boxes, CheckCircle2, Download, History, Printer, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { AdjustStockDialog } from "@/components/inventory/adjust-stock-dialog";
@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PrintReportFooter, PrintReportHeader } from "@/components/print/print-report-chrome";
+import { printBusinessReport } from "@/lib/print";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useFranchises } from "@/hooks/use-franchises";
 import { useInventoryItems } from "@/hooks/use-inventory";
@@ -73,6 +75,7 @@ export function InventoryDashboardView({ mode }: { mode: "superadmin" | "owner" 
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+      <PrintReportHeader reportName="Inventory & Low Stock Report" filtersSummary={`Low Stock Only: ${lowStockOnly ? "Yes" : "No"}${debouncedSearch ? ` · Search: ${debouncedSearch}` : ""}`} />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Outlet Supply Inventory</h1>
@@ -80,7 +83,11 @@ export function InventoryDashboardView({ mode }: { mode: "superadmin" | "owner" 
             Track unit-level supplies, automatic BOM sale deductions, low-stock alerts, and movement ledgers.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="no-print flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => printBusinessReport()}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print Report
+          </Button>
           <Button type="button" variant="outline" onClick={handleExportCsv} disabled={items.length === 0}>
             <Download className="mr-2 h-4 w-4" />
             Export CSV
@@ -100,7 +107,7 @@ export function InventoryDashboardView({ mode }: { mode: "superadmin" | "owner" 
         <Card><CardHeader className="pb-2"><CardTitle className="text-xs font-medium uppercase text-stone-500">Low Stock Alerts</CardTitle></CardHeader><CardContent className="flex items-center justify-between"><p className="text-2xl font-bold text-amber-700">{stats.low}</p><AlertTriangle className="h-5 w-5 text-amber-600" /></CardContent></Card>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="no-print flex flex-wrap items-center gap-3">
         <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search supply item..." className="pl-9" />
@@ -186,6 +193,7 @@ export function InventoryDashboardView({ mode }: { mode: "superadmin" | "owner" 
       {isSuperAdmin && <CreateInventoryItemDialog open={createOpen} onOpenChange={setCreateOpen} franchises={franchises} />}
       <AdjustStockDialog item={adjustItem} onOpenChange={(open) => { if (!open) setAdjustItem(null); }} />
       <MovementLedgerDrawer item={ledgerItem} onOpenChange={(open) => { if (!open) setLedgerItem(null); }} />
+      <PrintReportFooter />
     </div>
   );
 }

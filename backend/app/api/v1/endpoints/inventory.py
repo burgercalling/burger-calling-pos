@@ -200,7 +200,7 @@ def adjust_inventory_stock(
     item = db.scalar(
         select(InventoryItem).options(joinedload(InventoryItem.franchise)).where(
             InventoryItem.id == item_id, InventoryItem.deleted_at.is_(None), InventoryItem.is_active.is_(True)
-        ).with_for_update()
+        ).with_for_update(of=InventoryItem)
     )
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory item not found")

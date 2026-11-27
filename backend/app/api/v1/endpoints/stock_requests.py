@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -24,6 +25,7 @@ from app.schemas.stock_request import (
 from app.services.audit import get_client_ip, record_audit_log
 
 router = APIRouter(prefix="/stock-requests", tags=["Stock Requests"])
+logger = logging.getLogger("burger_calling_pos.stock_requests")
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -63,14 +65,16 @@ def _apply_delivery_credit(
     actor_user_id: UUID,
 ) -> None:
     if stock_request.inventory_applied:
+        logger.info("StockRequest %s already has inventory_applied=True; skipping duplicate credit", stock_request.request_number)
         return
+    logger.info("Step 5-6: Applying delivery credit for StockRequest %s (items=%d)", stock_request.request_number, len(stock_request.items))
 
     inv_ids = sorted({line.inventory_item_id for line in stock_request.items})
     locked_items = db.scalars(
         select(InventoryItem)
         .where(InventoryItem.id.in_(inv_ids))
         .order_by(InventoryItem.id.asc())
-        .with_for_update(of=StockRequest)
+        .with_for_update(of=InventoryItem)
     ).all()
     inv_map = {item.id: item for item in locked_items}
 
@@ -104,6 +108,7 @@ def _apply_delivery_credit(
 
     stock_request.inventory_applied = True
     stock_request.delivered_at = datetime.now(timezone.utc)
+    logger.info("Step 7: Inventory updated & transactions queued for StockRequest %s", stock_request.request_number)
 
 
 def _reverse_delivery_credit(
@@ -120,7 +125,7 @@ def _reverse_delivery_credit(
         select(InventoryItem)
         .where(InventoryItem.id.in_(inv_ids))
         .order_by(InventoryItem.id.asc())
-        .with_for_update(of=StockRequest)
+        .with_for_update(of=InventoryItem)
     ).all()
     inv_map = {item.id: item for item in locked_items}
 
@@ -171,7 +176,7 @@ def create_stock_request(
     franchise = db.scalar(
         select(Franchise).where(
             Franchise.id == current_user.franchise_id, Franchise.is_active.is_(True), Franchise.deleted_at.is_(None)
-        ).with_for_update(of=StockRequest)
+        ).with_for_update()
     )
     if franchise is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active franchise outlet not found")
@@ -224,6 +229,7 @@ def create_stock_request(
         )
     )
     db.commit()
+    logger.info("Step 8-9: Committed StockRequest %s status=%s", stock_request.request_number, stock_request.status.value)
     db.refresh(stock_request)
     return StockRequestResponse.model_validate(stock_request)
 
@@ -318,6 +324,7 @@ def review_stock_request(
         )
     )
     db.commit()
+    logger.info("Step 8-9: Committed StockRequest %s status=%s", stock_request.request_number, stock_request.status.value)
     db.refresh(stock_request)
     return StockRequestResponse.model_validate(stock_request)
 
@@ -387,5 +394,6 @@ def update_stock_request_status(
         )
     )
     db.commit()
+    logger.info("Step 8-9: Committed StockRequest %s status=%s", stock_request.request_number, stock_request.status.value)
     db.refresh(stock_request)
     return StockRequestResponse.model_validate(stock_request)

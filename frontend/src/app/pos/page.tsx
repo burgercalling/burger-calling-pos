@@ -32,6 +32,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { useCategories, useProducts } from "@/hooks/use-menu";
 import { useCreateOrder, useCustomerLookup } from "@/hooks/use-pos";
 import { resolveMediaUrl } from "@/lib/api";
+import { printThermalReceipt } from "@/lib/print";
 import { formatINR, getProductChannelPrice, type Product } from "@/types/menu";
 import type { OrderReceiptPayload, OrderType, PaymentMode } from "@/types/pos";
 
@@ -240,7 +241,7 @@ export default function PosTerminalPage() {
           setExternalOrderNumber("");
           setTableNumber("");
           setMobileCartOpen(false);
-          setTimeout(() => window.print(), 150);
+          printThermalReceipt();
         },
       }
     );
@@ -677,7 +678,7 @@ export default function PosTerminalPage() {
             <div className="rounded-lg border border-stone-200 bg-white p-3 text-stone-900">
               <ThermalReceipt receipt={activeReceipt} includeKot={canPrintKot && printKot} />
             </div>
-            <Button type="button" onClick={() => window.print()} className="w-full bg-orange-600 hover:bg-orange-700">
+            <Button type="button" onClick={() => printThermalReceipt()} className="w-full bg-orange-600 hover:bg-orange-700">
               <Printer className="mr-2 h-4 w-4" />
               Print Receipt
             </Button>
