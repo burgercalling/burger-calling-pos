@@ -43,7 +43,7 @@ class StockRequestReview(BaseModel):
 
 
 class StockRequestStatusAdvance(BaseModel):
-    next_status: Literal["packed", "dispatched", "delivered"]
+    next_status: StockRequestStatus
     admin_notes: str | None = Field(default=None, max_length=500)
 
 
@@ -68,6 +68,7 @@ class StockRequestResponse(BaseModel):
     requested_by_id: UUID
     reviewed_by_id: UUID | None
     status: StockRequestStatus
+    inventory_applied: bool = False
     remarks: str | None
     admin_notes: str | None
     reviewed_at: datetime | None

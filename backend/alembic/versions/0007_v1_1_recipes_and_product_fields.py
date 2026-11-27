@@ -31,7 +31,7 @@ def upgrade() -> None:
         sa.Column("product_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("ingredient_name", sa.String(length=150), nullable=False),
         sa.Column("quantity_required", sa.Numeric(precision=10, scale=3), nullable=False),
-        sa.Column("unit", sa.String(length=20), nullable=False),
+        sa.Column("unit", sa.String(length=20), server_default="pcs", nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["product_id"], ["products.id"], ondelete="CASCADE"),

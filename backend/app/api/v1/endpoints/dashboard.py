@@ -83,6 +83,19 @@ def get_outlet_dashboard(
     else:
         sales_delta_percent = Decimal("100.00") if today_sales > 0 else Decimal("0.00")
 
+    pending_sr = db.scalar(
+        select(func.count(StockRequest.id)).where(
+            StockRequest.franchise_id == target_franchise_id,
+            StockRequest.status == StockRequestStatus.PENDING,
+        )
+    ) or 0
+    delivered_sr = db.scalar(
+        select(func.count(StockRequest.id)).where(
+            StockRequest.franchise_id == target_franchise_id,
+            StockRequest.status == StockRequestStatus.DELIVERED,
+        )
+    ) or 0
+
     recent_orders_rows = (
         db.scalars(
             select(Order).options(joinedload(Order.franchise))
@@ -164,7 +177,10 @@ def get_outlet_dashboard(
     return OutletDashboardResponse(
         bill_date=today_date, today_sales=today_sales, today_orders=today_orders,
         avg_order_value=avg_order_value, yesterday_sales=yesterday_sales,
-        sales_delta_percent=sales_delta_percent, recent_orders=recent_orders,
+        sales_delta_percent=sales_delta_percent,
+        pending_stock_requests_count=int(pending_sr),
+        delivered_stock_requests_count=int(delivered_sr),
+        recent_orders=recent_orders,
         low_stock_alerts=low_stock_alerts,
         best_selling_products=best_selling_products,
         recent_activity=recent_activity,
@@ -191,6 +207,9 @@ def get_master_dashboard(
     ) or 0
     pending_stock_requests_count = db.scalar(
         select(func.count(StockRequest.id)).where(StockRequest.status == StockRequestStatus.PENDING)
+    ) or 0
+    delivered_stock_requests_count = db.scalar(
+        select(func.count(StockRequest.id)).where(StockRequest.status == StockRequestStatus.DELIVERED)
     ) or 0
     low_stock_alerts_count = db.scalar(
         select(func.count(InventoryItem.id)).where(
@@ -296,6 +315,7 @@ def get_master_dashboard(
         bill_date=today_date, network_today_sales=Decimal(network_agg[0]),
         network_today_orders=int(network_agg[1]), active_outlets_count=int(active_outlets_count),
         pending_stock_requests_count=int(pending_stock_requests_count),
+        delivered_stock_requests_count=int(delivered_stock_requests_count),
         low_stock_alerts_count=int(low_stock_alerts_count),
         outlet_leaderboard=outlet_leaderboard,
         network_low_stock_alerts=network_low_stock_alerts,

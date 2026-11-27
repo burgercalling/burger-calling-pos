@@ -26,17 +26,21 @@ export function useCreateInventoryItem() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory-items"] });
       qc.invalidateQueries({ queryKey: ["inventory-transactions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
     },
   });
 }
 
 export function useAdjustInventoryStock() {
   const qc = useQueryClient();
-  return useMutation<InventoryItem, ApiError, { itemId: string; change_type: "manual_adjust" | "wastage"; quantity_delta: number; remarks: string }>({
+  return useMutation<InventoryItem, ApiError, { itemId: string; change_type: "manual_adjust" | "wastage" | "correction" | "return"; quantity_delta: number; remarks: string }>({
     mutationFn: ({ itemId, ...body }) => apiFetch<InventoryItem>(`/inventory/items/${itemId}/adjust`, { method: "POST", body }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory-items"] });
       qc.invalidateQueries({ queryKey: ["inventory-transactions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
     },
   });
 }

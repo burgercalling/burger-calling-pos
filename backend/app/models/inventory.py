@@ -25,6 +25,8 @@ class InventoryChangeType(str, enum.Enum):
     REQUEST_DELIVERED = "request_delivered"
     WASTAGE = "wastage"
     SALE_DEDUCTION = "sale_deduction"
+    CORRECTION = "correction"
+    RETURN = "return"
 
 
 class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
@@ -106,7 +108,10 @@ class InventoryTransaction(UUIDPrimaryKeyMixin, Base):
         index=True,
     )
     quantity_delta: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    previous_stock: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     balance_after: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    reference_type: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    reference_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     remarks: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

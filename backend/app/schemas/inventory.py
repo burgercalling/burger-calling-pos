@@ -36,7 +36,7 @@ class InventoryItemCreate(BaseModel):
 
 
 class InventoryAdjustRequest(BaseModel):
-    change_type: Literal["manual_adjust", "wastage"] = "manual_adjust"
+    change_type: Literal["manual_adjust", "wastage", "correction", "return"] = "manual_adjust"
     quantity_delta: Decimal = Field(..., max_digits=10, decimal_places=2)
     remarks: str = Field(..., min_length=3, max_length=500)
 
@@ -111,7 +111,10 @@ class InventoryTransactionResponse(BaseModel):
     performed_by_id: UUID
     change_type: InventoryChangeType
     quantity_delta: Decimal
+    previous_stock: Decimal | None = None
     balance_after: Decimal
+    reference_type: str | None = None
+    reference_id: str | None = None
     remarks: str
     created_at: datetime
     inventory_item: InventoryItemSummary | None = None

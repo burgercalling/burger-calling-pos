@@ -210,6 +210,7 @@ def create_pos_order(
                 InventoryItem.is_active.is_(True),
                 InventoryItem.deleted_at.is_(None),
             )
+            .order_by(InventoryItem.id.asc())
             .with_for_update()
         ).all()
         inv_by_name = {item.item_name.strip().lower(): item for item in outlet_inv_items}
@@ -226,8 +227,9 @@ def create_pos_order(
             if total_deduct <= Decimal("0.00"):
                 continue
 
-            new_balance = max(Decimal("0.00"), inv_item.current_stock - total_deduct)
-            actual_delta = new_balance - inv_item.current_stock
+            prev_stock = inv_item.current_stock
+            new_balance = max(Decimal("0.00"), prev_stock - total_deduct)
+            actual_delta = new_balance - prev_stock
             inv_item.current_stock = new_balance
 
             db.add(
@@ -237,7 +239,10 @@ def create_pos_order(
                     performed_by_id=current_user.id,
                     change_type=InventoryChangeType.SALE_DEDUCTION,
                     quantity_delta=actual_delta,
+                    previous_stock=prev_stock,
                     balance_after=new_balance,
+                    reference_type="order",
+                    reference_id=str(order.id),
                     remarks=f"Auto-deducted for Bill {bill_number} (BOM recipe)",
                 )
             )

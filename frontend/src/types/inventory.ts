@@ -1,7 +1,14 @@
 import type { FranchiseSummary } from "@/types/auth";
 
 export type InventoryUnit = "pcs" | "pack" | "kg" | "liter" | "box";
-export type InventoryChangeType = "opening_stock" | "manual_adjust" | "request_delivered" | "wastage";
+export type InventoryChangeType =
+  | "opening_stock"
+  | "manual_adjust"
+  | "request_delivered"
+  | "wastage"
+  | "sale_deduction"
+  | "correction"
+  | "return";
 
 export interface InventoryItem {
   id: string;
@@ -31,7 +38,10 @@ export interface InventoryTransaction {
   performed_by_id: string;
   change_type: InventoryChangeType;
   quantity_delta: string;
+  previous_stock: string | null;
   balance_after: string;
+  reference_type: string | null;
+  reference_id: string | null;
   remarks: string;
   created_at: string;
   inventory_item: { id: string; item_name: string; unit: InventoryUnit } | null;

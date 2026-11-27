@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,7 @@ class StockRequestStatus(str, enum.Enum):
     PACKED = "packed"
     DISPATCHED = "dispatched"
     DELIVERED = "delivered"
+    CANCELLED = "cancelled"
 
 
 class StockRequest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -56,6 +57,12 @@ class StockRequest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default="pending",
         nullable=False,
         index=True,
+    )
+    inventory_applied: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
     )
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     admin_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

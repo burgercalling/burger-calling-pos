@@ -26,12 +26,6 @@ from app.services.audit import get_client_ip, record_audit_log
 router = APIRouter(prefix="/stock-requests", tags=["Stock Requests"])
 IST = ZoneInfo("Asia/Kolkata")
 
-ALLOWED_STATUS_TRANSITIONS: dict[StockRequestStatus, StockRequestStatus] = {
-    StockRequestStatus.APPROVED: StockRequestStatus.PACKED,
-    StockRequestStatus.PACKED: StockRequestStatus.DISPATCHED,
-    StockRequestStatus.DISPATCHED: StockRequestStatus.DELIVERED,
-}
-
 
 def _require_stock_request_creator(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != UserRole.FRANCHISE_OWNER:
@@ -61,6 +55,110 @@ def _generate_request_number(db: Session, franchise: Franchise) -> str:
         )
     ) or 0
     return f"{prefix}{existing_count + 1:03d}"
+
+
+def _apply_delivery_credit(
+    db: Session,
+    stock_request: StockRequest,
+    actor_user_id: UUID,
+) -> None:
+    if stock_request.inventory_applied:
+        return
+
+    inv_ids = sorted({line.inventory_item_id for line in stock_request.items})
+    locked_items = db.scalars(
+        select(InventoryItem)
+        .where(InventoryItem.id.in_(inv_ids))
+        .order_by(InventoryItem.id.asc())
+        .with_for_update()
+    ).all()
+    inv_map = {item.id: item for item in locked_items}
+
+    for line in stock_request.items:
+        credit_qty = line.approved_qty if line.approved_qty is not None else line.requested_qty
+        if credit_qty <= Decimal("0.00"):
+            continue
+        inv_item = inv_map.get(line.inventory_item_id)
+        if inv_item is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Inventory item '{line.item_name_snapshot}' missing",
+            )
+        prev_stock = inv_item.current_stock
+        new_stock = prev_stock + credit_qty
+        inv_item.current_stock = new_stock
+        db.add(
+            InventoryTransaction(
+                inventory_item_id=inv_item.id,
+                franchise_id=stock_request.franchise_id,
+                performed_by_id=actor_user_id,
+                change_type=InventoryChangeType.REQUEST_DELIVERED,
+                quantity_delta=credit_qty,
+                previous_stock=prev_stock,
+                balance_after=new_stock,
+                reference_type="stock_request",
+                reference_id=str(stock_request.id),
+                remarks=f"Stock request {stock_request.request_number} delivered",
+            )
+        )
+
+    stock_request.inventory_applied = True
+    stock_request.delivered_at = datetime.now(timezone.utc)
+
+
+def _reverse_delivery_credit(
+    db: Session,
+    stock_request: StockRequest,
+    actor_user_id: UUID,
+    new_status: StockRequestStatus,
+) -> None:
+    if not stock_request.inventory_applied:
+        return
+
+    inv_ids = sorted({line.inventory_item_id for line in stock_request.items})
+    locked_items = db.scalars(
+        select(InventoryItem)
+        .where(InventoryItem.id.in_(inv_ids))
+        .order_by(InventoryItem.id.asc())
+        .with_for_update()
+    ).all()
+    inv_map = {item.id: item for item in locked_items}
+
+    for line in stock_request.items:
+        credit_qty = line.approved_qty if line.approved_qty is not None else line.requested_qty
+        if credit_qty <= Decimal("0.00"):
+            continue
+        inv_item = inv_map.get(line.inventory_item_id)
+        if inv_item is None:
+            continue
+        prev_stock = inv_item.current_stock
+        if prev_stock - credit_qty < Decimal("0.00"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot reverse delivery: '{inv_item.item_name}' current stock ({prev_stock} {inv_item.unit.value}) "
+                    f"is less than credited quantity ({credit_qty} {inv_item.unit.value})."
+                ),
+            )
+        new_stock = prev_stock - credit_qty
+        inv_item.current_stock = new_stock
+        db.add(
+            InventoryTransaction(
+                inventory_item_id=inv_item.id,
+                franchise_id=stock_request.franchise_id,
+                performed_by_id=actor_user_id,
+                change_type=InventoryChangeType.CORRECTION,
+                quantity_delta=-credit_qty,
+                previous_stock=prev_stock,
+                balance_after=new_stock,
+                reference_type="stock_request",
+                reference_id=str(stock_request.id),
+                remarks=f"Reversed delivery for {stock_request.request_number} (status changed to {new_status.value})",
+            )
+        )
+
+    stock_request.inventory_applied = False
+    stock_request.delivered_at = None
 
 
 @router.post("", response_model=StockRequestResponse, status_code=status.HTTP_201_CREATED)
@@ -95,7 +193,8 @@ def create_stock_request(
     request_number = _generate_request_number(db, franchise)
     stock_request = StockRequest(
         request_number=request_number, franchise_id=franchise.id, requested_by_id=current_user.id,
-        status=StockRequestStatus.PENDING, remarks=payload.remarks.strip() if payload.remarks else None,
+        status=StockRequestStatus.PENDING, inventory_applied=False,
+        remarks=payload.remarks.strip() if payload.remarks else None,
     )
     db.add(stock_request)
     db.flush()
@@ -224,7 +323,7 @@ def review_stock_request(
 
 
 @router.patch("/{request_id}/status", response_model=StockRequestResponse)
-def advance_stock_request_status(
+def update_stock_request_status(
     request_id: UUID,
     payload: StockRequestStatusAdvance,
     request: Request,
@@ -240,50 +339,42 @@ def advance_stock_request_status(
     if stock_request is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stock request not found")
 
-    expected_next = ALLOWED_STATUS_TRANSITIONS.get(stock_request.status)
-    target_status = StockRequestStatus(payload.next_status)
-    if expected_next != target_status:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Invalid status transition from '{stock_request.status.value}' to '{target_status.value}'",
-        )
+    target_status = payload.next_status
+    if stock_request.status == target_status:
+        return StockRequestResponse.model_validate(stock_request)
 
     old_status = stock_request.status.value
+
+    # If moving from pending/rejected/cancelled into an active fulfillment stage, ensure approved_qty is populated
+    if target_status in (
+        StockRequestStatus.APPROVED,
+        StockRequestStatus.PACKED,
+        StockRequestStatus.DISPATCHED,
+        StockRequestStatus.DELIVERED,
+    ):
+        if stock_request.reviewed_by_id is None:
+            stock_request.reviewed_by_id = current_user.id
+            stock_request.reviewed_at = datetime.now(timezone.utc)
+        for line in stock_request.items:
+            if line.approved_qty is None or (old_status in ("rejected", "cancelled") and line.approved_qty == Decimal("0.00")):
+                line.approved_qty = line.requested_qty
+
+    # Reversal if leaving DELIVERED
+    if stock_request.status == StockRequestStatus.DELIVERED and target_status != StockRequestStatus.DELIVERED:
+        _reverse_delivery_credit(db, stock_request, current_user.id, target_status)
+
+    # Credit inventory if entering DELIVERED (idempotent via inventory_applied)
+    if target_status == StockRequestStatus.DELIVERED:
+        _apply_delivery_credit(db, stock_request, current_user.id)
+
     stock_request.status = target_status
     if payload.admin_notes and payload.admin_notes.strip():
         stock_request.admin_notes = payload.admin_notes.strip()
 
     client_ip = get_client_ip(request)
-
-    if target_status == StockRequestStatus.DELIVERED:
-        stock_request.delivered_at = datetime.now(timezone.utc)
-        inv_ids = sorted({line.inventory_item_id for line in stock_request.items})
-        locked_items = db.scalars(
-            select(InventoryItem).where(InventoryItem.id.in_(inv_ids))
-            .order_by(InventoryItem.id.asc()).with_for_update()
-        ).all()
-        inv_map = {item.id: item for item in locked_items}
-
-        for line in stock_request.items:
-            credit_qty = line.approved_qty if line.approved_qty is not None else line.requested_qty
-            if credit_qty <= Decimal("0.00"):
-                continue
-            inv_item = inv_map.get(line.inventory_item_id)
-            if inv_item is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Inventory item '{line.item_name_snapshot}' missing")
-            inv_item.current_stock = inv_item.current_stock + credit_qty
-            db.add(
-                InventoryTransaction(
-                    inventory_item_id=inv_item.id, franchise_id=stock_request.franchise_id,
-                    performed_by_id=current_user.id, change_type=InventoryChangeType.REQUEST_DELIVERED,
-                    quantity_delta=credit_qty, balance_after=inv_item.current_stock,
-                    remarks=f"Stock request {stock_request.request_number} delivered",
-                )
-            )
-
     record_audit_log(
         db, actor_user_id=current_user.id, franchise_id=stock_request.franchise_id,
-        action="STATUS_ADVANCE", entity_type="stock_request", entity_id=stock_request.id,
+        action="STATUS_UPDATE", entity_type="stock_request", entity_id=stock_request.id,
         old_values={"status": old_status}, new_values={"status": target_status.value},
         ip_address=client_ip,
     )
@@ -291,7 +382,7 @@ def advance_stock_request_status(
         ActivityLog(
             franchise_id=stock_request.franchise_id, user_id=current_user.id,
             event_type=f"STOCK_REQUEST_{target_status.value.upper()}",
-            description=f"Stock request {stock_request.request_number} marked {target_status.value}",
+            description=f"Stock request {stock_request.request_number} changed from {old_status} to {target_status.value}",
             ip_address=client_ip, user_agent=request.headers.get("User-Agent"),
         )
     )

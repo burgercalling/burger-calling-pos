@@ -1,6 +1,13 @@
 import type { FranchiseSummary } from "@/types/auth";
 
-export type StockRequestStatus = "pending" | "approved" | "rejected" | "packed" | "dispatched" | "delivered";
+export type StockRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "packed"
+  | "dispatched"
+  | "delivered"
+  | "cancelled";
 
 export interface StockRequestItem {
   id: string;
@@ -19,6 +26,7 @@ export interface StockRequest {
   requested_by_id: string;
   reviewed_by_id: string | null;
   status: StockRequestStatus;
+  inventory_applied: boolean;
   remarks: string | null;
   admin_notes: string | null;
   reviewed_at: string | null;

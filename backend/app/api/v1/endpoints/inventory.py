@@ -115,7 +115,10 @@ def create_inventory_items(
                 performed_by_id=current_user.id,
                 change_type=InventoryChangeType.OPENING_STOCK,
                 quantity_delta=payload.opening_stock,
+                previous_stock=Decimal("0.00"),
                 balance_after=payload.opening_stock,
+                reference_type="initial_stock",
+                reference_id=str(item.id),
                 remarks="Initial opening stock",
             )
         )
@@ -205,11 +208,12 @@ def adjust_inventory_stock(
     if current_user.role == UserRole.FRANCHISE_OWNER and item.franchise_id != current_user.franchise_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only adjust inventory for your own outlet")
 
-    new_balance = item.current_stock + payload.quantity_delta
+    prev_stock = item.current_stock
+    new_balance = prev_stock + payload.quantity_delta
     if new_balance < Decimal("0.00"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Insufficient stock: current balance is {item.current_stock} {item.unit.value}",
+            detail=f"Insufficient stock: current balance is {prev_stock} {item.unit.value}",
         )
 
     old_values = _item_snapshot(item)
@@ -218,9 +222,16 @@ def adjust_inventory_stock(
 
     db.add(
         InventoryTransaction(
-            inventory_item_id=item.id, franchise_id=item.franchise_id,
-            performed_by_id=current_user.id, change_type=change_enum,
-            quantity_delta=payload.quantity_delta, balance_after=new_balance, remarks=payload.remarks,
+            inventory_item_id=item.id,
+            franchise_id=item.franchise_id,
+            performed_by_id=current_user.id,
+            change_type=change_enum,
+            quantity_delta=payload.quantity_delta,
+            previous_stock=prev_stock,
+            balance_after=new_balance,
+            reference_type="manual_adjustment",
+            reference_id=str(item.id),
+            remarks=payload.remarks,
         )
     )
     record_audit_log(

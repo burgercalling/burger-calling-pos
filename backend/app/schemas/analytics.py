@@ -50,6 +50,8 @@ class OutletDashboardResponse(BaseModel):
     avg_order_value: Decimal
     yesterday_sales: Decimal
     sales_delta_percent: Decimal
+    pending_stock_requests_count: int = 0
+    delivered_stock_requests_count: int = 0
     recent_orders: list[RecentOrderRow]
     low_stock_alerts: list[LowStockAlertRow]
     best_selling_products: list[BestSellingProductRow] = Field(default_factory=list)
@@ -71,6 +73,7 @@ class MasterDashboardResponse(BaseModel):
     network_today_orders: int
     active_outlets_count: int
     pending_stock_requests_count: int
+    delivered_stock_requests_count: int = 0
     low_stock_alerts_count: int
     outlet_leaderboard: list[OutletLeaderboardRow]
     network_low_stock_alerts: list[LowStockAlertRow]
