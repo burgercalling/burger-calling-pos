@@ -5,13 +5,28 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { Customer, OrderReceiptPayload, OrderType, PaymentMode, TodayOrdersSummary } from "@/types/pos";
 
+export interface CreateOrderInput {
+  order_type: OrderType;
+  order_source: string;
+  external_order_number?: string;
+  table_number?: string;
+  payment_mode: PaymentMode;
+  items: { product_id: string; quantity: number }[];
+  discount_type: "none" | "flat" | "percent";
+  discount_value: number;
+  customer_phone?: string;
+  customer_name?: string;
+  print_kot: boolean;
+}
+
 export function useCreateOrder() {
   const qc = useQueryClient();
-  return useMutation<OrderReceiptPayload, ApiError, { order_type: OrderType; payment_mode: PaymentMode; items: { product_id: string; quantity: number }[]; discount_type: "none" | "flat" | "percent"; discount_value: number; customer_phone?: string; customer_name?: string; print_kot: boolean }>({
+  return useMutation<OrderReceiptPayload, ApiError, CreateOrderInput>({
     mutationFn: (payload) => apiFetch<OrderReceiptPayload>("/pos/orders", { method: "POST", body: payload }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pos", "today"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }

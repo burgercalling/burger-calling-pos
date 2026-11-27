@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from app.api.deps import require_roles
 from app.models.user import User, UserRole
 from app.schemas.auth import MessageResponse
-from app.schemas.menu import MediaUploadResponse
+from app.schemas.menu import MediaUploadResponse, MediaUrlUploadRequest
 from app.storage.upload_service import (
     LocalStorageService,
     UploadFolder,
@@ -49,6 +49,20 @@ async def upload_logo_image(
     storage: LocalStorageService = Depends(get_upload_service),
 ) -> MediaUploadResponse:
     return _to_response(await storage.save_image(file, "logos"))
+
+
+@router.post("/from-url", response_model=MediaUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_image_from_url(
+    payload: MediaUrlUploadRequest,
+    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.FRANCHISE_OWNER)),
+    storage: LocalStorageService = Depends(get_upload_service),
+) -> MediaUploadResponse:
+    if payload.folder in ("products", "categories") and current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Super Admin can upload product or category images",
+        )
+    return _to_response(await storage.save_image_from_url(payload.image_url, payload.folder))
 
 
 @router.put("/replace", response_model=MediaUploadResponse)

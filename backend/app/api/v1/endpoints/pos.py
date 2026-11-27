@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from uuid import UUID
@@ -5,13 +6,14 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.activity_log import ActivityLog
 from app.models.customer import Customer
-from app.models.order import Order, OrderItem, OrderStatus, PaymentMode
+from app.models.inventory import InventoryChangeType, InventoryItem, InventoryTransaction
+from app.models.order import Order, OrderItem, OrderStatus, OrderType, PaymentMode
 from app.models.product import Product
 from app.models.setting import Setting
 from app.models.user import User
@@ -26,6 +28,30 @@ from app.services.audit import get_client_ip
 from app.services.billing import generate_atomic_bill_number, get_effective_setting
 
 router = APIRouter(prefix="/pos", tags=["POS Billing"])
+
+
+def _resolve_channel_price(product: Product, order_source: str) -> Decimal:
+    src = (order_source or "dine_in").strip().lower()
+    for pp in product.prices or []:
+        if pp.order_source.strip().lower() == src:
+            return pp.price
+    return product.price
+
+
+def _convert_recipe_qty(qty: Decimal, recipe_unit: str, inv_unit: str) -> Decimal:
+    ru = (recipe_unit or "").strip().lower()
+    iu = (inv_unit or "").strip().lower()
+    if ru == iu:
+        return qty
+    if ru == "g" and iu == "kg":
+        return qty / Decimal("1000")
+    if ru == "kg" and iu == "g":
+        return qty * Decimal("1000")
+    if ru == "ml" and iu == "liter":
+        return qty / Decimal("1000")
+    if ru == "liter" and iu == "ml":
+        return qty * Decimal("1000")
+    return qty
 
 
 def _build_receipt_settings(order: Order, setting: Setting) -> ReceiptSettingsPayload:
@@ -59,11 +85,21 @@ def create_pos_order(
     franchise_id = current_user.franchise_id
     setting = get_effective_setting(db, franchise_id)
 
+    effective_source = (payload.order_source or payload.order_type.value).strip().lower()
+    try:
+        resolved_order_type = OrderType(effective_source)
+    except ValueError:
+        resolved_order_type = payload.order_type
+
     product_ids = [line.product_id for line in payload.items]
     products = db.scalars(
-        select(Product).where(
-            Product.id.in_(product_ids), Product.is_active.is_(True),
-            Product.is_available.is_(True), Product.deleted_at.is_(None),
+        select(Product)
+        .options(selectinload(Product.recipes), selectinload(Product.prices))
+        .where(
+            Product.id.in_(product_ids),
+            Product.is_active.is_(True),
+            Product.is_available.is_(True),
+            Product.deleted_at.is_(None),
         )
     ).all()
     product_map = {p.id: p for p in products}
@@ -72,17 +108,26 @@ def create_pos_order(
 
     subtotal = Decimal("0.00")
     order_items_to_create: list[OrderItem] = []
+    ingredient_needs: dict[str, list[tuple[Decimal, str]]] = defaultdict(list)
 
     for line in payload.items:
         prod = product_map[line.product_id]
-        line_total = (prod.price * line.quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        unit_price = _resolve_channel_price(prod, effective_source)
+        line_total = (unit_price * line.quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         subtotal += line_total
         order_items_to_create.append(
             OrderItem(
-                product_id=prod.id, product_name_snapshot=prod.name,
-                unit_price=prod.price, quantity=line.quantity, line_total=line_total,
+                product_id=prod.id,
+                product_name_snapshot=prod.name,
+                unit_price=unit_price,
+                quantity=line.quantity,
+                line_total=line_total,
             )
         )
+        for rec in prod.recipes or []:
+            key = rec.ingredient_name.strip().lower()
+            needed = rec.quantity_required * Decimal(line.quantity)
+            ingredient_needs[key].append((needed, rec.unit))
 
     if payload.discount_type == "flat":
         discount_amount = payload.discount_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -129,11 +174,24 @@ def create_pos_order(
         customer_id = customer.id
 
     order = Order(
-        bill_number=bill_number, bill_date=bill_date, daily_sequence=daily_sequence,
-        franchise_id=franchise_id, cashier_id=current_user.id, customer_id=customer_id,
-        order_type=payload.order_type, payment_mode=payload.payment_mode,
-        subtotal=subtotal, discount_amount=discount_amount, tax_amount=tax_amount,
-        grand_total=grand_total, kot_printed=kot_printed, reprint_count=0,
+        bill_number=bill_number,
+        bill_date=bill_date,
+        daily_sequence=daily_sequence,
+        franchise_id=franchise_id,
+        cashier_id=current_user.id,
+        customer_id=customer_id,
+        order_type=resolved_order_type,
+        order_source=effective_source,
+        external_order_number=payload.external_order_number,
+        customer_name_snapshot=payload.customer_name,
+        table_number=payload.table_number,
+        payment_mode=payload.payment_mode,
+        subtotal=subtotal,
+        discount_amount=discount_amount,
+        tax_amount=tax_amount,
+        grand_total=grand_total,
+        kot_printed=kot_printed,
+        reprint_count=0,
         status=OrderStatus.COMPLETED,
     )
     db.add(order)
@@ -143,11 +201,53 @@ def create_pos_order(
         oi.order_id = order.id
         db.add(oi)
 
+    # Automatic Recipe / BOM Inventory Deduction
+    if ingredient_needs:
+        outlet_inv_items = db.scalars(
+            select(InventoryItem)
+            .where(
+                InventoryItem.franchise_id == franchise_id,
+                InventoryItem.is_active.is_(True),
+                InventoryItem.deleted_at.is_(None),
+            )
+            .with_for_update()
+        ).all()
+        inv_by_name = {item.item_name.strip().lower(): item for item in outlet_inv_items}
+
+        for ing_key, usages in ingredient_needs.items():
+            inv_item = inv_by_name.get(ing_key)
+            if inv_item is None:
+                continue
+            total_deduct = sum(
+                (_convert_recipe_qty(q, u, inv_item.unit.value) for q, u in usages),
+                Decimal("0.000"),
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+            if total_deduct <= Decimal("0.00"):
+                continue
+
+            new_balance = max(Decimal("0.00"), inv_item.current_stock - total_deduct)
+            actual_delta = new_balance - inv_item.current_stock
+            inv_item.current_stock = new_balance
+
+            db.add(
+                InventoryTransaction(
+                    inventory_item_id=inv_item.id,
+                    franchise_id=franchise_id,
+                    performed_by_id=current_user.id,
+                    change_type=InventoryChangeType.SALE_DEDUCTION,
+                    quantity_delta=actual_delta,
+                    balance_after=new_balance,
+                    remarks=f"Auto-deducted for Bill {bill_number} (BOM recipe)",
+                )
+            )
+
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("User-Agent")
+    ext_note = f" [{payload.external_order_number}]" if payload.external_order_number else ""
     db.add(ActivityLog(
         franchise_id=franchise_id, user_id=current_user.id, event_type="BILL_CREATED",
-        description=f"Bill {bill_number} settled ({payload.payment_mode.value}) ₹{grand_total}",
+        description=f"Bill {bill_number} ({effective_source.upper()}{ext_note}) settled ({payload.payment_mode.value}) ₹{grand_total}",
         ip_address=client_ip, user_agent=user_agent,
     ))
     db.add(ActivityLog(

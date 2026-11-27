@@ -6,6 +6,8 @@ from typing import Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+import openpyxl
+from openpyxl.styles import Font, PatternFill
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func, select
@@ -24,8 +26,10 @@ from app.schemas.analytics import (
     DailySalesRow,
     InventoryReportRow,
     MonthlySalesRow,
+    OrderSourceSalesRow,
     PaymentSalesRow,
     ProductSalesRow,
+    SlowMovingProductRow,
     StockRequestReportRow,
 )
 
@@ -66,12 +70,43 @@ def _csv_response(filename: str, headers: list[str], rows: list[list[Any]]) -> S
     )
 
 
+def _xlsx_response(filename: str, sheet_title: str, headers: list[str], rows: list[list[Any]]) -> StreamingResponse:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = sheet_title[:31]
+
+    header_fill = PatternFill(start_color="B91C1C", end_color="B91C1C", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+
+    ws.append(headers)
+    for col_idx in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+
+    for row in rows:
+        ws.append(row)
+
+    for col in ws.columns:
+        max_len = max((len(str(c.value or "")) for c in col), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return StreamingResponse(
+        out,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/daily-sales")
 def daily_sales_report(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     franchise_id: UUID | None = Query(default=None),
-    format: Literal["json", "csv"] = Query(default="json"),
+    format: Literal["json", "csv", "xlsx"] = Query(default="json"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -98,12 +133,12 @@ def daily_sales_report(
         )
         for r in rows
     ]
+    headers = ["Date", "Orders", "Gross Sales (INR)", "Discounts (INR)", "Net Sales (INR)"]
+    table_rows = [[d.bill_date.isoformat(), d.order_count, float(d.gross_sales), float(d.discounts), float(d.net_sales)] for d in data]
     if format == "csv":
-        return _csv_response(
-            f"daily-sales-{s_date}-to-{e_date}.csv",
-            ["Date", "Orders", "Gross Sales (INR)", "Discounts (INR)", "Net Sales (INR)"],
-            [[d.bill_date.isoformat(), d.order_count, str(d.gross_sales), str(d.discounts), str(d.net_sales)] for d in data],
-        )
+        return _csv_response(f"daily-sales-{s_date}-to-{e_date}.csv", headers, table_rows)
+    if format == "xlsx":
+        return _xlsx_response(f"daily-sales-{s_date}-to-{e_date}.xlsx", "Daily Sales", headers, table_rows)
     return data
 
 
@@ -112,7 +147,7 @@ def monthly_sales_report(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     franchise_id: UUID | None = Query(default=None),
-    format: Literal["json", "csv"] = Query(default="json"),
+    format: Literal["json", "csv", "xlsx"] = Query(default="json"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -146,12 +181,12 @@ def monthly_sales_report(
         prev_revenue = rev
     data.reverse()
 
+    headers = ["Month", "Orders", "Revenue (INR)", "MoM Growth (%)"]
+    table_rows = [[d.month, d.order_count, float(d.revenue), float(d.growth_percent) if d.growth_percent is not None else ""] for d in data]
     if format == "csv":
-        return _csv_response(
-            f"monthly-sales-{s_date}-to-{e_date}.csv",
-            ["Month", "Orders", "Revenue (INR)", "MoM Growth (%)"],
-            [[d.month, d.order_count, str(d.revenue), str(d.growth_percent) if d.growth_percent is not None else ""] for d in data],
-        )
+        return _csv_response(f"monthly-sales-{s_date}-to-{e_date}.csv", headers, table_rows)
+    if format == "xlsx":
+        return _xlsx_response(f"monthly-sales-{s_date}-to-{e_date}.xlsx", "Monthly Sales", headers, table_rows)
     return data
 
 
@@ -160,7 +195,7 @@ def product_sales_report(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     franchise_id: UUID | None = Query(default=None),
-    format: Literal["json", "csv"] = Query(default="json"),
+    format: Literal["json", "csv", "xlsx"] = Query(default="json"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -191,12 +226,67 @@ def product_sales_report(
         )
         for r in rows
     ]
+    headers = ["Product", "Category", "Item Type", "Qty Sold", "Revenue (INR)"]
+    table_rows = [[d.product_name, d.category_name, d.item_type, d.qty_sold, float(d.total_revenue)] for d in data]
     if format == "csv":
-        return _csv_response(
-            f"product-sales-{s_date}-to-{e_date}.csv",
-            ["Product", "Category", "Item Type", "Qty Sold", "Revenue (INR)"],
-            [[d.product_name, d.category_name, d.item_type, d.qty_sold, str(d.total_revenue)] for d in data],
+        return _csv_response(f"product-sales-{s_date}-to-{e_date}.csv", headers, table_rows)
+    if format == "xlsx":
+        return _xlsx_response(f"product-sales-{s_date}-to-{e_date}.xlsx", "Product Sales", headers, table_rows)
+    return data
+
+
+@router.get("/slow-moving-products")
+def slow_moving_products_report(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    franchise_id: UUID | None = Query(default=None),
+    format: Literal["json", "csv", "xlsx"] = Query(default="json"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    scoped_franchise = _require_report_scope(franchise_id, current_user)
+    s_date, e_date = _resolve_dates(start_date, end_date)
+
+    order_join_cond = (Order.id == OrderItem.order_id) & (Order.status == OrderStatus.COMPLETED) & (Order.bill_date >= s_date) & (Order.bill_date <= e_date)
+    if scoped_franchise is not None:
+        order_join_cond = order_join_cond & (Order.franchise_id == scoped_franchise)
+
+    qty_expr = func.coalesce(
+        func.sum(case((Order.id.isnot(None), OrderItem.quantity), else_=0)),
+        0,
+    )
+    rev_expr = func.coalesce(
+        func.sum(case((Order.id.isnot(None), OrderItem.line_total), else_=Decimal("0.00"))),
+        Decimal("0.00"),
+    )
+
+    rows = db.execute(
+        select(
+            Product.id, Product.name, Category.name.label("category_name"), Product.price,
+            qty_expr.label("qty_sold"), rev_expr.label("total_revenue"),
         )
+        .join(Category, Category.id == Product.category_id)
+        .outerjoin(OrderItem, OrderItem.product_id == Product.id)
+        .outerjoin(Order, order_join_cond)
+        .where(Product.deleted_at.is_(None), Product.is_active.is_(True))
+        .group_by(Product.id, Product.name, Category.name, Product.price)
+        .order_by(qty_expr.asc(), Product.name.asc())
+        .limit(25)
+    ).all()
+
+    data = [
+        SlowMovingProductRow(
+            product_id=r.id, product_name=r.name, category_name=r.category_name,
+            price=Decimal(r.price), qty_sold=int(r.qty_sold), total_revenue=Decimal(r.total_revenue),
+        )
+        for r in rows
+    ]
+    headers = ["Product", "Category", "Menu Price (INR)", "Qty Sold", "Revenue (INR)"]
+    table_rows = [[d.product_name, d.category_name, float(d.price), d.qty_sold, float(d.total_revenue)] for d in data]
+    if format == "csv":
+        return _csv_response(f"slow-moving-{s_date}-to-{e_date}.csv", headers, table_rows)
+    if format == "xlsx":
+        return _xlsx_response(f"slow-moving-{s_date}-to-{e_date}.xlsx", "Slow Moving", headers, table_rows)
     return data
 
 
@@ -205,7 +295,7 @@ def payment_sales_report(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     franchise_id: UUID | None = Query(default=None),
-    format: Literal["json", "csv"] = Query(default="json"),
+    format: Literal["json", "csv", "xlsx"] = Query(default="json"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -234,12 +324,55 @@ def payment_sales_report(
         )
         for r in rows
     ]
+    headers = ["Payment Mode", "Orders", "Total Amount (INR)", "Share (%)"]
+    table_rows = [[d.payment_mode.upper(), d.order_count, float(d.total_amount), float(d.share_percent)] for d in data]
     if format == "csv":
-        return _csv_response(
-            f"payment-sales-{s_date}-to-{e_date}.csv",
-            ["Payment Mode", "Orders", "Total Amount (INR)", "Share (%)"],
-            [[d.payment_mode.upper(), d.order_count, str(d.total_amount), str(d.share_percent)] for d in data],
+        return _csv_response(f"payment-sales-{s_date}-to-{e_date}.csv", headers, table_rows)
+    if format == "xlsx":
+        return _xlsx_response(f"payment-sales-{s_date}-to-{e_date}.xlsx", "Payment Analysis", headers, table_rows)
+    return data
+
+
+@router.get("/order-source-sales")
+def order_source_sales_report(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    franchise_id: UUID | None = Query(default=None),
+    format: Literal["json", "csv", "xlsx"] = Query(default="json"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    scoped_franchise = _require_report_scope(franchise_id, current_user)
+    s_date, e_date = _resolve_dates(start_date, end_date)
+    filters = [Order.status == OrderStatus.COMPLETED, Order.bill_date >= s_date, Order.bill_date <= e_date]
+    if scoped_franchise is not None:
+        filters.append(Order.franchise_id == scoped_franchise)
+
+    rows = db.execute(
+        select(
+            Order.order_source, func.count(Order.id).label("order_count"),
+            func.coalesce(func.sum(Order.grand_total), Decimal("0.00")).label("total_amount"),
+        ).where(*filters).group_by(Order.order_source).order_by(func.sum(Order.grand_total).desc())
+    ).all()
+
+    grand = sum((Decimal(r.total_amount) for r in rows), Decimal("0.00"))
+    data = [
+        OrderSourceSalesRow(
+            order_source=r.order_source, order_count=int(r.order_count),
+            total_amount=Decimal(r.total_amount),
+            share_percent=(
+                (Decimal(r.total_amount) / grand * Decimal("100.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                if grand > Decimal("0.00") else Decimal("0.00")
+            ),
         )
+        for r in rows
+    ]
+    headers = ["Order Source", "Orders", "Total Amount (INR)", "Share (%)"]
+    table_rows = [[d.order_source.upper(), d.order_count, float(d.total_amount), float(d.share_percent)] for d in data]
+    if format == "csv":
+        return _csv_response(f"order-source-sales-{s_date}-to-{e_date}.csv", headers, table_rows)
+    if format == "xlsx":
+        return _xlsx_response(f"order-source-sales-{s_date}-to-{e_date}.xlsx", "Order Sources", headers, table_rows)
     return data
 
 
@@ -248,7 +381,7 @@ def inventory_report(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     franchise_id: UUID | None = Query(default=None),
-    format: Literal["json", "csv"] = Query(default="json"),
+    format: Literal["json", "csv", "xlsx"] = Query(default="json"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -300,12 +433,12 @@ def inventory_report(
         )
         for r in rows
     ]
+    headers = ["Outlet Code", "Outlet Name", "Supply Item", "Unit", "Current Stock", "Reorder Level", "Low Stock", "Total Inward", "Total Outward"]
+    table_rows = [[d.outlet_code, d.outlet_name, d.item_name, d.unit, float(d.current_stock), float(d.reorder_level), "YES" if d.is_low_stock else "NO", float(d.total_inward), float(d.total_outward)] for d in data]
     if format == "csv":
-        return _csv_response(
-            f"inventory-report-{s_date}-to-{e_date}.csv",
-            ["Outlet Code", "Outlet Name", "Supply Item", "Unit", "Current Stock", "Reorder Level", "Low Stock", "Total Inward", "Total Outward"],
-            [[d.outlet_code, d.outlet_name, d.item_name, d.unit, str(d.current_stock), str(d.reorder_level), "YES" if d.is_low_stock else "NO", str(d.total_inward), str(d.total_outward)] for d in data],
-        )
+        return _csv_response(f"inventory-report-{s_date}-to-{e_date}.csv", headers, table_rows)
+    if format == "xlsx":
+        return _xlsx_response(f"inventory-report-{s_date}-to-{e_date}.xlsx", "Inventory Analysis", headers, table_rows)
     return data
 
 
@@ -314,7 +447,7 @@ def stock_request_report(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     franchise_id: UUID | None = Query(default=None),
-    format: Literal["json", "csv"] = Query(default="json"),
+    format: Literal["json", "csv", "xlsx"] = Query(default="json"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -353,10 +486,10 @@ def stock_request_report(
         )
         for r in rows
     ]
+    headers = ["Request Number", "Outlet Code", "Outlet Name", "Status", "Requested Qty Total", "Approved Qty Total", "Created At", "Delivered At"]
+    table_rows = [[d.request_number, d.outlet_code, d.outlet_name, d.status, float(d.requested_qty_total), float(d.approved_qty_total), d.created_at.isoformat(), d.delivered_at.isoformat() if d.delivered_at else ""] for d in data]
     if format == "csv":
-        return _csv_response(
-            f"stock-requests-{s_date}-to-{e_date}.csv",
-            ["Request Number", "Outlet Code", "Outlet Name", "Status", "Requested Qty Total", "Approved Qty Total", "Created At", "Delivered At"],
-            [[d.request_number, d.outlet_code, d.outlet_name, d.status, str(d.requested_qty_total), str(d.approved_qty_total), d.created_at.isoformat(), d.delivered_at.isoformat() if d.delivered_at else ""] for d in data],
-        )
+        return _csv_response(f"stock-requests-{s_date}-to-{e_date}.csv", headers, table_rows)
+    if format == "xlsx":
+        return _xlsx_response(f"stock-requests-{s_date}-to-{e_date}.xlsx", "Stock Requests", headers, table_rows)
     return data

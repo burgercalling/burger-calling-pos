@@ -1,6 +1,13 @@
-export type OrderType = "dine_in" | "takeaway";
+export type OrderType = "dine_in" | "takeaway" | "swiggy" | "zomato";
 export type PaymentMode = "cash" | "upi" | "card" | "split";
 export type PrinterWidthMode = "auto" | "80mm" | "58mm";
+
+export const ORDER_SOURCE_LABELS: Record<string, string> = {
+  dine_in: "Dine In",
+  takeaway: "Take Away",
+  swiggy: "Swiggy",
+  zomato: "Zomato",
+};
 
 export interface Customer {
   id: string;
@@ -31,6 +38,10 @@ export interface Order {
   cashier_id: string;
   customer_id: string | null;
   order_type: OrderType;
+  order_source: string;
+  external_order_number: string | null;
+  customer_name_snapshot: string | null;
+  table_number: string | null;
   payment_mode: PaymentMode;
   subtotal: string;
   discount_amount: string;

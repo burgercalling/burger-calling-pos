@@ -8,9 +8,11 @@ import type {
   InventoryReportRow,
   MasterDashboardData,
   MonthlySalesRow,
+  OrderSourceSalesRow,
   OutletDashboardData,
   PaymentSalesRow,
   ProductSalesRow,
+  SlowMovingProductRow,
   StockRequestReportRow,
 } from "@/types/analytics";
 
@@ -37,7 +39,7 @@ export interface ReportFilterParams {
   franchise_id?: string;
 }
 
-function buildReportQuery(params: ReportFilterParams, format: "json" | "csv" = "json") {
+function buildReportQuery(params: ReportFilterParams, format: "json" | "csv" | "xlsx" = "json") {
   const qs = new URLSearchParams({ start_date: params.start_date, end_date: params.end_date, format });
   if (params.franchise_id) qs.set("franchise_id", params.franchise_id);
   return qs.toString();
@@ -46,6 +48,11 @@ function buildReportQuery(params: ReportFilterParams, format: "json" | "csv" = "
 export function getReportCsvUrl(reportPath: string, params: ReportFilterParams): string {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
   return `${base}/reports/${reportPath}?${buildReportQuery(params, "csv")}`;
+}
+
+export function getReportXlsxUrl(reportPath: string, params: ReportFilterParams): string {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+  return `${base}/reports/${reportPath}?${buildReportQuery(params, "xlsx")}`;
 }
 
 export function useDailySalesReport(params: ReportFilterParams, enabled = true) {
@@ -72,10 +79,26 @@ export function useProductSalesReport(params: ReportFilterParams, enabled = true
   });
 }
 
+export function useSlowMovingProductsReport(params: ReportFilterParams, enabled = true) {
+  return useQuery<SlowMovingProductRow[], ApiError>({
+    queryKey: ["reports", "slow-moving-products", params],
+    queryFn: () => apiFetch<SlowMovingProductRow[]>(`/reports/slow-moving-products?${buildReportQuery(params)}`),
+    enabled,
+  });
+}
+
 export function usePaymentSalesReport(params: ReportFilterParams, enabled = true) {
   return useQuery<PaymentSalesRow[], ApiError>({
     queryKey: ["reports", "payment-sales", params],
     queryFn: () => apiFetch<PaymentSalesRow[]>(`/reports/payment-sales?${buildReportQuery(params)}`),
+    enabled,
+  });
+}
+
+export function useOrderSourceSalesReport(params: ReportFilterParams, enabled = true) {
+  return useQuery<OrderSourceSalesRow[], ApiError>({
+    queryKey: ["reports", "order-source-sales", params],
+    queryFn: () => apiFetch<OrderSourceSalesRow[]>(`/reports/order-source-sales?${buildReportQuery(params)}`),
     enabled,
   });
 }

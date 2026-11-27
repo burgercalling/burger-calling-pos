@@ -9,16 +9,19 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
+from app.models.activity_log import ActivityLog
 from app.models.franchise import Franchise
 from app.models.inventory import InventoryItem
-from app.models.order import Order, OrderStatus
+from app.models.order import Order, OrderItem, OrderStatus
 from app.models.stock_request import StockRequest, StockRequestStatus
 from app.models.user import User, UserRole
 from app.schemas.analytics import (
+    BestSellingProductRow,
     LowStockAlertRow,
     MasterDashboardResponse,
     OutletDashboardResponse,
     OutletLeaderboardRow,
+    RecentActivityRow,
     RecentOrderRow,
 )
 from app.services.billing import get_effective_setting
@@ -45,6 +48,7 @@ def get_outlet_dashboard(
     setting = get_effective_setting(db, target_franchise_id)
     today_date = datetime.now(ZoneInfo(setting.timezone or "Asia/Kolkata")).date()
     yesterday_date = today_date - timedelta(days=1)
+    week_start = today_date - timedelta(days=6)
 
     today_agg = db.execute(
         select(
@@ -91,7 +95,10 @@ def get_outlet_dashboard(
             id=o.id, bill_number=o.bill_number,
             outlet_code=o.franchise.outlet_code if o.franchise else None,
             outlet_name=o.franchise.name if o.franchise else None,
-            order_type=o.order_type.value, payment_mode=o.payment_mode.value,
+            order_type=o.order_type.value,
+            order_source=o.order_source or o.order_type.value,
+            external_order_number=o.external_order_number,
+            payment_mode=o.payment_mode.value,
             grand_total=o.grand_total, created_at=o.created_at,
         )
         for o in recent_orders_rows
@@ -114,11 +121,53 @@ def get_outlet_dashboard(
         for item in low_stock_rows
     ]
 
+    best_rows = db.execute(
+        select(
+            OrderItem.product_id,
+            OrderItem.product_name_snapshot,
+            func.coalesce(func.sum(OrderItem.quantity), 0).label("qty_sold"),
+            func.coalesce(func.sum(OrderItem.line_total), Decimal("0.00")).label("total_revenue"),
+        )
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(
+            Order.franchise_id == target_franchise_id,
+            Order.status == OrderStatus.COMPLETED,
+            Order.bill_date >= week_start,
+        )
+        .group_by(OrderItem.product_id, OrderItem.product_name_snapshot)
+        .order_by(func.sum(OrderItem.quantity).desc())
+        .limit(5)
+    ).all()
+    best_selling_products = [
+        BestSellingProductRow(
+            product_id=r.product_id,
+            product_name=r.product_name_snapshot,
+            qty_sold=int(r.qty_sold),
+            total_revenue=Decimal(r.total_revenue),
+        )
+        for r in best_rows
+    ]
+
+    activity_rows = db.scalars(
+        select(ActivityLog)
+        .where(ActivityLog.franchise_id == target_franchise_id)
+        .order_by(ActivityLog.created_at.desc())
+        .limit(8)
+    ).all()
+    recent_activity = [
+        RecentActivityRow(
+            id=a.id, event_type=a.event_type, description=a.description, created_at=a.created_at
+        )
+        for a in activity_rows
+    ]
+
     return OutletDashboardResponse(
         bill_date=today_date, today_sales=today_sales, today_orders=today_orders,
         avg_order_value=avg_order_value, yesterday_sales=yesterday_sales,
         sales_delta_percent=sales_delta_percent, recent_orders=recent_orders,
         low_stock_alerts=low_stock_alerts,
+        best_selling_products=best_selling_products,
+        recent_activity=recent_activity,
     )
 
 
@@ -128,6 +177,7 @@ def get_master_dashboard(
     _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> MasterDashboardResponse:
     today_date = datetime.now(IST).date()
+    week_start = today_date - timedelta(days=6)
 
     network_agg = db.execute(
         select(
@@ -200,10 +250,46 @@ def get_master_dashboard(
             id=o.id, bill_number=o.bill_number,
             outlet_code=o.franchise.outlet_code if o.franchise else None,
             outlet_name=o.franchise.name if o.franchise else None,
-            order_type=o.order_type.value, payment_mode=o.payment_mode.value,
+            order_type=o.order_type.value,
+            order_source=o.order_source or o.order_type.value,
+            external_order_number=o.external_order_number,
+            payment_mode=o.payment_mode.value,
             grand_total=o.grand_total, created_at=o.created_at,
         )
         for o in recent_orders_rows
+    ]
+
+    best_rows = db.execute(
+        select(
+            OrderItem.product_id,
+            OrderItem.product_name_snapshot,
+            func.coalesce(func.sum(OrderItem.quantity), 0).label("qty_sold"),
+            func.coalesce(func.sum(OrderItem.line_total), Decimal("0.00")).label("total_revenue"),
+        )
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(Order.status == OrderStatus.COMPLETED, Order.bill_date >= week_start)
+        .group_by(OrderItem.product_id, OrderItem.product_name_snapshot)
+        .order_by(func.sum(OrderItem.quantity).desc())
+        .limit(5)
+    ).all()
+    best_selling_products = [
+        BestSellingProductRow(
+            product_id=r.product_id,
+            product_name=r.product_name_snapshot,
+            qty_sold=int(r.qty_sold),
+            total_revenue=Decimal(r.total_revenue),
+        )
+        for r in best_rows
+    ]
+
+    activity_rows = db.scalars(
+        select(ActivityLog).order_by(ActivityLog.created_at.desc()).limit(8)
+    ).all()
+    recent_activity = [
+        RecentActivityRow(
+            id=a.id, event_type=a.event_type, description=a.description, created_at=a.created_at
+        )
+        for a in activity_rows
     ]
 
     return MasterDashboardResponse(
@@ -214,4 +300,6 @@ def get_master_dashboard(
         outlet_leaderboard=outlet_leaderboard,
         network_low_stock_alerts=network_low_stock_alerts,
         recent_orders=recent_orders,
+        best_selling_products=best_selling_products,
+        recent_activity=recent_activity,
     )

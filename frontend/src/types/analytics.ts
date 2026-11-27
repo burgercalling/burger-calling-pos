@@ -4,6 +4,8 @@ export interface RecentOrderRow {
   outlet_code: string | null;
   outlet_name: string | null;
   order_type: string;
+  order_source: string;
+  external_order_number: string | null;
   payment_mode: string;
   grand_total: string;
   created_at: string;
@@ -20,6 +22,20 @@ export interface LowStockAlertRow {
   reorder_level: string;
 }
 
+export interface BestSellingProductRow {
+  product_id: string;
+  product_name: string;
+  qty_sold: number;
+  total_revenue: string;
+}
+
+export interface RecentActivityRow {
+  id: string;
+  event_type: string;
+  description: string;
+  created_at: string;
+}
+
 export interface OutletDashboardData {
   bill_date: string;
   today_sales: string;
@@ -29,6 +45,8 @@ export interface OutletDashboardData {
   sales_delta_percent: string;
   recent_orders: RecentOrderRow[];
   low_stock_alerts: LowStockAlertRow[];
+  best_selling_products: BestSellingProductRow[];
+  recent_activity: RecentActivityRow[];
 }
 
 export interface OutletLeaderboardRow {
@@ -50,6 +68,8 @@ export interface MasterDashboardData {
   outlet_leaderboard: OutletLeaderboardRow[];
   network_low_stock_alerts: LowStockAlertRow[];
   recent_orders: RecentOrderRow[];
+  best_selling_products: BestSellingProductRow[];
+  recent_activity: RecentActivityRow[];
 }
 
 export interface DailySalesRow {
@@ -76,8 +96,24 @@ export interface ProductSalesRow {
   total_revenue: string;
 }
 
+export interface SlowMovingProductRow {
+  product_id: string;
+  product_name: string;
+  category_name: string;
+  price: string;
+  qty_sold: number;
+  total_revenue: string;
+}
+
 export interface PaymentSalesRow {
   payment_mode: string;
+  order_count: number;
+  total_amount: string;
+  share_percent: string;
+}
+
+export interface OrderSourceSalesRow {
+  order_source: string;
   order_count: number;
   total_amount: string;
   share_percent: string;

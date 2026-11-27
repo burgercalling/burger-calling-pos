@@ -24,6 +24,7 @@ class InventoryChangeType(str, enum.Enum):
     MANUAL_ADJUST = "manual_adjust"
     REQUEST_DELIVERED = "request_delivered"
     WASTAGE = "wastage"
+    SALE_DEDUCTION = "sale_deduction"
 
 
 class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):

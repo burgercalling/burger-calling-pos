@@ -1,17 +1,22 @@
 "use client";
 
-import { Loader2, Pencil, Plus, Search, Trash2, UtensilsCrossed } from "lucide-react";
-import { useState } from "react";
+import { FileSpreadsheet, Pencil, Plus, Search, Sparkles, Trash2, Utensils, UtensilsCrossed } from "lucide-react";
+import { memo, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { BulkImportDialog } from "@/components/menu/bulk-import-dialog";
 import { CategoryManager } from "@/components/menu/category-manager";
 import { ProductFormDialog } from "@/components/menu/product-form-dialog";
+import { RecipeEditorDialog } from "@/components/menu/recipe-editor-dialog";
+import { ZomatoImportDialog } from "@/components/menu/zomato-import-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { useDebounce } from "@/hooks/use-debounce";
 import { useCategories, useDeleteProduct, useProducts, useToggleProductAvailability } from "@/hooks/use-menu";
 import { resolveMediaUrl } from "@/lib/api";
 import { formatINR, type Product, type ProductItemType } from "@/types/menu";
@@ -23,19 +28,124 @@ const ITEM_TYPE_STYLES: Record<ProductItemType, string> = {
   addon: "bg-emerald-100 text-emerald-800 hover:bg-emerald-100",
 };
 
+const MenuProductCard = memo(function MenuProductCard({
+  product,
+  onEdit,
+  onEditRecipe,
+  onToggleAvailability,
+  onDelete,
+  isToggling,
+  isDeleting,
+}: {
+  product: Product;
+  onEdit: (p: Product) => void;
+  onEditRecipe: (p: Product) => void;
+  onToggleAvailability: (id: string, val: boolean) => void;
+  onDelete: (id: string) => void;
+  isToggling: boolean;
+  isDeleting: boolean;
+}) {
+  const recipeCount = product.recipes?.length ?? 0;
+
+  return (
+    <Card className="flex flex-col justify-between overflow-hidden border-stone-200 transition hover:shadow-md dark:border-stone-800">
+      <div>
+        <div className="relative h-40 w-full bg-stone-100 dark:bg-stone-900">
+          {product.image_url ? (
+            <img
+              src={resolveMediaUrl(product.image_url) ?? ""}
+              alt={product.name}
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-stone-400">
+              <UtensilsCrossed className="h-8 w-8" />
+            </div>
+          )}
+          <Badge className={`absolute left-2.5 top-2.5 ${ITEM_TYPE_STYLES[product.item_type]}`}>
+            {ITEM_TYPE_LABELS[product.item_type]}
+          </Badge>
+          {recipeCount > 0 && (
+            <Badge className="absolute right-2.5 top-2.5 bg-stone-900/80 text-white hover:bg-stone-900">
+              BOM: {recipeCount}
+            </Badge>
+          )}
+        </div>
+        <CardContent className="space-y-2 p-4">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="font-semibold leading-snug text-stone-900 dark:text-stone-100">{product.name}</h3>
+              <p className="text-xs text-stone-500">
+                {product.category?.name ?? "Uncategorized"}
+                {product.sku ? ` · ${product.sku}` : ""}
+              </p>
+            </div>
+            <span className="shrink-0 font-bold text-orange-700">{formatINR(product.price)}</span>
+          </div>
+          {product.description && <p className="line-clamp-2 text-xs text-stone-500">{product.description}</p>}
+        </CardContent>
+      </div>
+      <div className="flex items-center justify-between border-t border-stone-100 px-4 py-3 dark:border-stone-800">
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={product.is_available}
+            disabled={isToggling}
+            onCheckedChange={(checked) => onToggleAvailability(product.id, checked)}
+          />
+          <span className={`text-xs font-medium ${product.is_available ? "text-emerald-700" : "text-red-600"}`}>
+            {product.is_available ? "Available" : "Unavailable"}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            title="Edit Recipe (BOM)"
+            onClick={() => onEditRecipe(product)}
+          >
+            <Utensils className="h-4 w-4 text-orange-600" />
+          </Button>
+          <Button type="button" size="icon" variant="ghost" title="Edit Product" onClick={() => onEdit(product)}>
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="text-red-600 hover:bg-red-50"
+            disabled={isDeleting}
+            onClick={() => onDelete(product.id)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+});
+
 export default function MenuManagementPage() {
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 280);
   const [categoryId, setCategoryId] = useState<string>("all");
   const [itemType, setItemType] = useState<string>("all");
+
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [zomatoOpen, setZomatoOpen] = useState(false);
+  const [recipeOpen, setRecipeOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [recipeProduct, setRecipeProduct] = useState<Product | null>(null);
 
   const categoriesQuery = useCategories(false);
   const productsQuery = useProducts({
     category_id: categoryId !== "all" ? categoryId : undefined,
     item_type: itemType !== "all" ? (itemType as ProductItemType) : undefined,
-    search: search || undefined,
-    page: 1, page_size: 100,
+    search: debouncedSearch || undefined,
+    page: 1,
+    page_size: 100,
   });
   const toggleAvailability = useToggleProductAvailability();
   const deleteProduct = useDeleteProduct();
@@ -45,61 +155,119 @@ export default function MenuManagementPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-7xl space-y-8 p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div><h1 className="text-2xl font-bold tracking-tight text-stone-900">Menu &amp; Catalog Management</h1><p className="text-sm text-stone-500">100% Pure Veg catalog: manage categories, combos, add-ons, and live availability.</p></div>
-          <Button onClick={() => { setEditingProduct(null); setDialogOpen(true); }} disabled={categories.length === 0} className="bg-orange-600 hover:bg-orange-700"><Plus className="mr-2 h-4 w-4" />Add Product</Button>
+      <div className="mx-auto max-w-7xl space-y-8 p-4 sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
+              Menu &amp; Catalog Management
+            </h1>
+            <p className="text-sm text-stone-500">
+              100% Pure Veg catalog: manage single products, bulk Excel/CSV imports, Zomato menu sync, and BOM recipes.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBulkOpen(true)}
+            >
+              <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-700" />
+              Bulk Import
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setZomatoOpen(true)}
+              className="border-rose-200 text-rose-700 hover:bg-rose-50"
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Import Zomato Menu
+            </Button>
+            <Button
+              onClick={() => {
+                setEditingProduct(null);
+                setDialogOpen(true);
+              }}
+              disabled={categories.length === 0}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Product
+            </Button>
+          </div>
         </div>
+
         <CategoryManager />
+
         <div className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative max-w-sm flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products or SKU..." className="pl-9" /></div>
+            <div className="relative max-w-sm flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search products or SKU..."
+                className="pl-9"
+              />
+            </div>
             <Select value={categoryId} onValueChange={setCategoryId}>
-              <SelectTrigger className="w-48"><SelectValue placeholder="All Categories" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All Categories</SelectItem>{categories.map((cat) => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}</SelectContent>
+              <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="All Categories" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
             <Select value={itemType} onValueChange={setItemType}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="All Types" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="regular">Regular</SelectItem><SelectItem value="combo">Combo</SelectItem><SelectItem value="addon">Add-on</SelectItem></SelectContent>
+              <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All Types" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="regular">Regular</SelectItem>
+                <SelectItem value="combo">Combo</SelectItem>
+                <SelectItem value="addon">Add-on</SelectItem>
+              </SelectContent>
             </Select>
           </div>
+
           {productsQuery.isLoading ? (
-            <div className="flex items-center justify-center py-16 text-stone-500"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading menu items...</div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-72 w-full rounded-xl" />
+              ))}
+            </div>
           ) : products.length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-sm text-stone-500">No menu items match the selected filters.</CardContent></Card>
+            <Card>
+              <CardContent className="py-12 text-center text-sm text-stone-500">
+                No menu items match the selected filters.
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {products.map((product) => (
-                <Card key={product.id} className="flex flex-col justify-between overflow-hidden border-stone-200">
-                  <div>
-                    <div className="relative h-40 w-full bg-stone-100">
-                      {product.image_url ? <img src={resolveMediaUrl(product.image_url) ?? ""} alt={product.name} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-stone-400"><UtensilsCrossed className="h-8 w-8" /></div>}
-                      <Badge className={`absolute left-2.5 top-2.5 ${ITEM_TYPE_STYLES[product.item_type]}`}>{ITEM_TYPE_LABELS[product.item_type]}</Badge>
-                    </div>
-                    <CardContent className="space-y-2 p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div><h3 className="font-semibold leading-snug text-stone-900">{product.name}</h3><p className="text-xs text-stone-500">{product.category?.name ?? "Uncategorized"}{product.sku ? ` · ${product.sku}` : ""}</p></div>
-                        <span className="shrink-0 font-bold text-orange-700">{formatINR(product.price)}</span>
-                      </div>
-                      {product.description && <p className="line-clamp-2 text-xs text-stone-500">{product.description}</p>}
-                    </CardContent>
-                  </div>
-                  <div className="flex items-center justify-between border-t border-stone-100 px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Switch checked={product.is_available} disabled={toggleAvailability.isPending} onCheckedChange={(checked) => toggleAvailability.mutate({ id: product.id, is_available: checked })} />
-                      <span className={`text-xs font-medium ${product.is_available ? "text-emerald-700" : "text-red-600"}`}>{product.is_available ? "Available" : "Unavailable"}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button type="button" size="icon" variant="ghost" onClick={() => { setEditingProduct(product); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                      <Button type="button" size="icon" variant="ghost" className="text-red-600 hover:bg-red-50" disabled={deleteProduct.isPending} onClick={() => deleteProduct.mutate(product.id)}><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                  </div>
-                </Card>
+                <MenuProductCard
+                  key={product.id}
+                  product={product}
+                  onEdit={(p) => {
+                    setEditingProduct(p);
+                    setDialogOpen(true);
+                  }}
+                  onEditRecipe={(p) => {
+                    setRecipeProduct(p);
+                    setRecipeOpen(true);
+                  }}
+                  onToggleAvailability={(id, val) => toggleAvailability.mutate({ id, is_available: val })}
+                  onDelete={(id) => deleteProduct.mutate(id)}
+                  isToggling={toggleAvailability.isPending}
+                  isDeleting={deleteProduct.isPending}
+                />
               ))}
             </div>
           )}
         </div>
+
         <ProductFormDialog open={dialogOpen} onOpenChange={setDialogOpen} categories={categories} product={editingProduct} />
+        <BulkImportDialog open={bulkOpen} onOpenChange={setBulkOpen} />
+        <ZomatoImportDialog open={zomatoOpen} onOpenChange={setZomatoOpen} />
+        <RecipeEditorDialog open={recipeOpen} onOpenChange={setRecipeOpen} product={recipeProduct} />
       </div>
     </AppShell>
   );

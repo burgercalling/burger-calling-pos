@@ -34,6 +34,8 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    cost_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    tax_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     item_type: Mapped[ProductItemType] = mapped_column(
         Enum(
@@ -55,6 +57,18 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
 
     category = relationship("Category", back_populates="products", lazy="joined")
+    recipes = relationship(
+        "ProductRecipe",
+        back_populates="product",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    prices = relationship(
+        "ProductPrice",
+        back_populates="product",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
     __table_args__ = (
         Index("ix_products_category_type_active", "category_id", "item_type", "is_active"),

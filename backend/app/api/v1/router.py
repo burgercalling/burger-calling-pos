@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     media,
     pos,
     products,
+    recipes,
     reports,
     settings,
     stock_requests,
@@ -24,6 +25,7 @@ api_router.include_router(franchises.router)
 api_router.include_router(users.router)
 api_router.include_router(categories.router)
 api_router.include_router(products.router)
+api_router.include_router(recipes.router)
 api_router.include_router(media.router)
 api_router.include_router(inventory.router)
 api_router.include_router(stock_requests.router)

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RecentOrderRow(BaseModel):
@@ -11,6 +11,8 @@ class RecentOrderRow(BaseModel):
     outlet_code: str | None = None
     outlet_name: str | None = None
     order_type: str
+    order_source: str = "dine_in"
+    external_order_number: str | None = None
     payment_mode: str
     grand_total: Decimal
     created_at: datetime
@@ -27,6 +29,20 @@ class LowStockAlertRow(BaseModel):
     reorder_level: Decimal
 
 
+class BestSellingProductRow(BaseModel):
+    product_id: UUID
+    product_name: str
+    qty_sold: int
+    total_revenue: Decimal
+
+
+class RecentActivityRow(BaseModel):
+    id: UUID
+    event_type: str
+    description: str
+    created_at: datetime
+
+
 class OutletDashboardResponse(BaseModel):
     bill_date: date
     today_sales: Decimal
@@ -36,6 +52,8 @@ class OutletDashboardResponse(BaseModel):
     sales_delta_percent: Decimal
     recent_orders: list[RecentOrderRow]
     low_stock_alerts: list[LowStockAlertRow]
+    best_selling_products: list[BestSellingProductRow] = Field(default_factory=list)
+    recent_activity: list[RecentActivityRow] = Field(default_factory=list)
 
 
 class OutletLeaderboardRow(BaseModel):
@@ -57,6 +75,8 @@ class MasterDashboardResponse(BaseModel):
     outlet_leaderboard: list[OutletLeaderboardRow]
     network_low_stock_alerts: list[LowStockAlertRow]
     recent_orders: list[RecentOrderRow]
+    best_selling_products: list[BestSellingProductRow] = Field(default_factory=list)
+    recent_activity: list[RecentActivityRow] = Field(default_factory=list)
 
 
 class DailySalesRow(BaseModel):
@@ -83,8 +103,24 @@ class ProductSalesRow(BaseModel):
     total_revenue: Decimal
 
 
+class SlowMovingProductRow(BaseModel):
+    product_id: UUID
+    product_name: str
+    category_name: str
+    price: Decimal
+    qty_sold: int
+    total_revenue: Decimal
+
+
 class PaymentSalesRow(BaseModel):
     payment_mode: str
+    order_count: int
+    total_amount: Decimal
+    share_percent: Decimal
+
+
+class OrderSourceSalesRow(BaseModel):
+    order_source: str
     order_count: int
     total_amount: Decimal
     share_percent: Decimal

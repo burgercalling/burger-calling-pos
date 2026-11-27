@@ -62,13 +62,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { data: user } = useCurrentUser();
   const logoutMutation = useLogout();
   const navItems = user ? NAV_BY_ROLE[user.role] ?? [] : [];
+  const mobileItems = navItems.slice(0, 5);
 
   return (
     <div className="flex min-h-screen bg-stone-50 dark:bg-stone-950">
-      <aside className="no-print hidden w-64 flex-col border-r border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900 md:flex">
+      <aside className="no-print hidden w-64 shrink-0 flex-col border-r border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900 md:flex">
         <div className="border-b border-stone-200 px-5 py-4 dark:border-stone-800">
           <p className="text-lg font-extrabold tracking-tight text-orange-600">BURGER CALLING</p>
-          <p className="text-xs text-stone-500">100% Pure Veg POS</p>
+          <p className="text-xs text-stone-500">100% Pure Veg POS · v1.1</p>
         </div>
 
         <nav className="flex-1 space-y-1 p-3">
@@ -81,7 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
                   active
-                    ? "bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400"
+                    ? "bg-orange-50 text-orange-700 shadow-xs dark:bg-orange-950/50 dark:text-orange-400"
                     : "text-stone-700 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-800"
                 }`}
               >
@@ -110,13 +111,46 @@ export function AppShell({ children }: { children: ReactNode }) {
               {theme === "dark" ? <Sun className="mr-1.5 h-3.5 w-3.5" /> : <Moon className="mr-1.5 h-3.5 w-3.5" />}
               {theme === "dark" ? "Light" : "Dark"}
             </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => logoutMutation.mutate()}>
+            <Button type="button" size="sm" variant="outline" onClick={() => logoutMutation.mutate()} title="Sign out">
               <LogOut className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
       </aside>
-      <main className="flex-1 overflow-x-hidden">{children}</main>
+
+      <main className="flex-1 overflow-x-hidden pb-20 md:pb-0">{children}</main>
+
+      {mobileItems.length > 0 && (
+        <nav className="no-print fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-stone-200 bg-white/95 px-1 py-1.5 backdrop-blur-md dark:border-stone-800 dark:bg-stone-900/95 md:hidden">
+          {mobileItems.map((item) => {
+            const Icon = item.icon;
+            const active = pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-2 py-1 text-[10px] font-medium transition ${
+                  active
+                    ? "text-orange-600 dark:text-orange-400"
+                    : "text-stone-500 hover:text-stone-900 dark:text-stone-400"
+                }`}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{item.label.split(" ")[0]}</span>
+              </Link>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => logoutMutation.mutate()}
+            className="flex flex-col items-center gap-0.5 rounded-lg px-2 py-1 text-[10px] font-medium text-stone-500 hover:text-red-600"
+            title="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Exit</span>
+          </button>
+        </nav>
+      )}
     </div>
   );
 }

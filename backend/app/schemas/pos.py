@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.order import OrderStatus, OrderType, PaymentMode
 from app.models.setting import PrinterWidthMode
@@ -16,6 +16,9 @@ class OrderItemInput(BaseModel):
 
 class CreateOrderRequest(BaseModel):
     order_type: OrderType = OrderType.DINE_IN
+    order_source: str | None = Field(default=None, max_length=50)
+    external_order_number: str | None = Field(default=None, max_length=100)
+    table_number: str | None = Field(default=None, max_length=20)
     payment_mode: PaymentMode = PaymentMode.CASH
     items: list[OrderItemInput] = Field(..., min_length=1)
     discount_type: Literal["none", "flat", "percent"] = "none"
@@ -24,21 +27,35 @@ class CreateOrderRequest(BaseModel):
     customer_name: str | None = Field(default=None, max_length=150)
     print_kot: bool = True
 
-    @field_validator("customer_phone")
+    @field_validator("customer_phone", "customer_name", "external_order_number", "table_number")
     @classmethod
-    def normalize_phone(cls, v: str | None) -> str | None:
+    def strip_optional_str(cls, v: str | None) -> str | None:
         if v is None:
             return None
         cleaned = v.strip()
         return cleaned or None
 
-    @field_validator("customer_name")
+    @field_validator("order_source")
     @classmethod
-    def normalize_name(cls, v: str | None) -> str | None:
+    def normalize_order_source(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        cleaned = v.strip()
+        cleaned = v.strip().lower()
         return cleaned or None
+
+    @model_validator(mode="after")
+    def validate_source_requirements(self) -> "CreateOrderRequest":
+        src = self.order_source or self.order_type.value
+        self.order_source = src
+        if src in ("swiggy", "zomato"):
+            if not self.external_order_number:
+                raise ValueError(f"{src.title()} Order Number is required")
+            if not self.customer_name:
+                raise ValueError(f"Customer Name is required for {src.title()} orders")
+        elif src == "takeaway":
+            if not self.customer_name or not self.customer_phone:
+                raise ValueError("Customer Name and Customer Phone are required for Take Away orders")
+        return self
 
 
 class OrderItemResponse(BaseModel):
@@ -92,6 +109,10 @@ class OrderResponse(BaseModel):
     cashier_id: UUID
     customer_id: UUID | None
     order_type: OrderType
+    order_source: str
+    external_order_number: str | None = None
+    customer_name_snapshot: str | None = None
+    table_number: str | None = None
     payment_mode: PaymentMode
     subtotal: Decimal
     discount_amount: Decimal

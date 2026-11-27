@@ -24,6 +24,8 @@ from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 class OrderType(str, enum.Enum):
     DINE_IN = "dine_in"
     TAKEAWAY = "takeaway"
+    SWIGGY = "swiggy"
+    ZOMATO = "zomato"
 
 
 class PaymentMode(str, enum.Enum):
@@ -74,6 +76,26 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             values_callable=lambda enum_cls: [member.value for member in enum_cls],
         ),
         nullable=False,
+    )
+    order_source: Mapped[str] = mapped_column(
+        String(50),
+        default="dine_in",
+        server_default="dine_in",
+        nullable=False,
+        index=True,
+    )
+    external_order_number: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+    customer_name_snapshot: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+    )
+    table_number: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
     )
     payment_mode: Mapped[PaymentMode] = mapped_column(
         Enum(
