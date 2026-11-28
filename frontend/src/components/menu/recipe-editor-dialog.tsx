@@ -1,12 +1,13 @@
 "use client";
 
 import { Loader2, Plus, Trash2, Utensils } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useInventoryItems } from "@/hooks/use-inventory";
 import { useProductRecipe, useUpdateProductRecipe } from "@/hooks/use-menu";
 import type { Product } from "@/types/menu";
 
@@ -14,6 +15,7 @@ interface RecipeRowDraft {
   ingredient_name: string;
   quantity_required: string;
   unit: string;
+  isCustom?: boolean;
 }
 
 const RECIPE_UNITS = ["pcs", "g", "kg", "ml", "liter", "pack", "box"];
@@ -28,43 +30,81 @@ export function RecipeEditorDialog({
   product: Product | null;
 }) {
   const recipeQuery = useProductRecipe(open && product ? product.id : null);
+  const inventoryQuery = useInventoryItems({ page_size: 200 });
   const saveMutation = useUpdateProductRecipe();
+
   const [rows, setRows] = useState<RecipeRowDraft[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const inventoryOptions = useMemo(() => {
+    const seen = new Map<string, { name: string; unit: string }>();
+    for (const item of inventoryQuery.data?.items ?? []) {
+      const key = item.item_name.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.set(key, { name: item.item_name.trim(), unit: item.unit });
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [inventoryQuery.data]);
+
+  const inventoryNameSet = useMemo(
+    () => new Set(inventoryOptions.map((opt) => opt.name.toLowerCase())),
+    [inventoryOptions]
+  );
+
   useEffect(() => {
-    if (recipeQuery.data) {
+    const sourceRows = recipeQuery.data ?? (open && product?.recipes ? product.recipes : null);
+    if (sourceRows) {
       setRows(
-        recipeQuery.data.map((r) => ({
-          ingredient_name: r.ingredient_name,
-          quantity_required: String(r.quantity_required),
-          unit: r.unit,
-        }))
-      );
-    } else if (open && product?.recipes) {
-      setRows(
-        product.recipes.map((r) => ({
-          ingredient_name: r.ingredient_name,
-          quantity_required: String(r.quantity_required),
-          unit: r.unit,
-        }))
+        sourceRows.map((r) => {
+          const name = r.ingredient_name.trim();
+          const inInv = inventoryNameSet.has(name.toLowerCase());
+          return {
+            ingredient_name: name,
+            quantity_required: String(r.quantity_required),
+            unit: r.unit,
+            isCustom: name.length > 0 && inventoryOptions.length > 0 && !inInv,
+          };
+        })
       );
     } else {
       setRows([]);
     }
     setErrorMsg(null);
-  }, [recipeQuery.data, open, product]);
+  }, [recipeQuery.data, open, product, inventoryNameSet, inventoryOptions.length]);
 
   const addRow = () => {
-    setRows((prev) => [...prev, { ingredient_name: "", quantity_required: "1", unit: "pcs" }]);
+    const first = inventoryOptions[0];
+    setRows((prev) => [
+      ...prev,
+      {
+        ingredient_name: first ? first.name : "",
+        quantity_required: "1",
+        unit: first ? first.unit : "pcs",
+        isCustom: !first,
+      },
+    ]);
   };
 
   const removeRow = (idx: number) => {
     setRows((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const updateRow = (idx: number, field: keyof RecipeRowDraft, value: string) => {
-    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  const updateRow = (idx: number, patch: Partial<RecipeRowDraft>) => {
+    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
+
+  const handleInventorySelect = (idx: number, selectedValue: string) => {
+    if (selectedValue === "__custom__") {
+      updateRow(idx, { ingredient_name: "", isCustom: true });
+      return;
+    }
+    const matched = inventoryOptions.find((opt) => opt.name === selectedValue);
+    updateRow(idx, {
+      ingredient_name: selectedValue,
+      unit: matched?.unit ?? rows[idx]?.unit ?? "pcs",
+      isCustom: false,
+    });
   };
 
   const handleSave = () => {
@@ -93,14 +133,14 @@ export function RecipeEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Utensils className="h-5 w-5 text-orange-600" />
             Recipe / BOM — {product?.name}
           </DialogTitle>
           <DialogDescription>
-            Ingredients listed here are automatically deducted from outlet inventory whenever this product is sold on POS (supports unit conversion e.g. g to kg, ml to liter).
+            Choose ingredients from your Inventory list (or enter a custom name). Whenever this item is sold on POS, matching outlet stock deducts automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -123,45 +163,83 @@ export function RecipeEditorDialog({
                   No ingredients configured yet. Add ingredients below to enable automatic stock deduction.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {rows.map((row, idx) => (
-                    <div key={idx} className="grid grid-cols-12 items-center gap-2">
-                      <Input
-                        className="col-span-6"
-                        placeholder="Ingredient (e.g. Burger Bun)"
-                        value={row.ingredient_name}
-                        onChange={(e) => updateRow(idx, "ingredient_name", e.target.value)}
-                      />
-                      <Input
-                        className="col-span-3"
-                        type="number"
-                        step="0.001"
-                        min="0.001"
-                        placeholder="Qty"
-                        value={row.quantity_required}
-                        onChange={(e) => updateRow(idx, "quantity_required", e.target.value)}
-                      />
-                      <div className="col-span-2">
-                        <Select value={row.unit} onValueChange={(v) => updateRow(idx, "unit", v)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {RECIPE_UNITS.map((u) => (
-                              <SelectItem key={u} value={u}>{u}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                <div className="space-y-2.5">
+                  {rows.map((row, idx) => {
+                    const matchedOpt = inventoryOptions.find(
+                      (opt) => opt.name.toLowerCase() === row.ingredient_name.trim().toLowerCase()
+                    );
+                    const selectValue = row.isCustom
+                      ? "__custom__"
+                      : matchedOpt
+                      ? matchedOpt.name
+                      : "__custom__";
+
+                    return (
+                      <div key={idx} className="grid grid-cols-12 items-start gap-2">
+                        <div className="col-span-6 space-y-1.5">
+                          {inventoryOptions.length > 0 ? (
+                            <Select
+                              value={selectValue}
+                              onValueChange={(val) => handleInventorySelect(idx, val)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Choose ingredient from inventory" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {inventoryOptions.map((opt) => (
+                                  <SelectItem key={opt.name} value={opt.name}>
+                                    {opt.name} ({opt.unit})
+                                  </SelectItem>
+                                ))}
+                                <SelectItem value="__custom__">+ Custom ingredient...</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : null}
+
+                          {(row.isCustom || inventoryOptions.length === 0 || !matchedOpt) && (
+                            <Input
+                              placeholder="Ingredient (e.g. Burger Bun)"
+                              value={row.ingredient_name}
+                              onChange={(e) =>
+                                updateRow(idx, { ingredient_name: e.target.value, isCustom: true })
+                              }
+                            />
+                          )}
+                        </div>
+
+                        <Input
+                          className="col-span-3"
+                          type="number"
+                          step="0.001"
+                          min="0.001"
+                          placeholder="Qty"
+                          value={row.quantity_required}
+                          onChange={(e) => updateRow(idx, { quantity_required: e.target.value })}
+                        />
+
+                        <div className="col-span-2">
+                          <Select value={row.unit} onValueChange={(v) => updateRow(idx, { unit: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {RECIPE_UNITS.map((u) => (
+                                <SelectItem key={u} value={u}>{u}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="col-span-1 text-red-600 hover:bg-red-50"
+                          onClick={() => removeRow(idx)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="col-span-1 text-red-600 hover:bg-red-50"
-                        onClick={() => removeRow(idx)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

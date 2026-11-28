@@ -1,3 +1,4 @@
+import asyncio
 import ipaddress
 import socket
 from dataclasses import dataclass
@@ -39,7 +40,7 @@ class StorageServiceProtocol(Protocol):
     def delete_image(self, relative_path: str | None) -> bool: ...
 
 
-def _validate_public_http_url(raw_url: str) -> str:
+async def _validate_public_http_url(raw_url: str) -> str:
     parsed = urlparse(raw_url.strip())
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise HTTPException(
@@ -51,7 +52,7 @@ def _validate_public_http_url(raw_url: str) -> str:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid URL hostname")
 
     try:
-        ip_str = socket.gethostbyname(hostname)
+        ip_str = await asyncio.to_thread(socket.gethostbyname, hostname)
         ip_obj = ipaddress.ip_address(ip_str)
         if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_reserved:
             raise HTTPException(
@@ -119,9 +120,9 @@ class LocalStorageService:
         if folder not in VALID_UPLOAD_FOLDERS:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid upload folder")
 
-        safe_url = _validate_public_http_url(image_url)
+        safe_url = await _validate_public_http_url(image_url)
         try:
-            async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
                 resp = await client.get(safe_url, headers={"User-Agent": "BurgerCallingPOS/1.1"})
         except httpx.HTTPError as exc:
             raise HTTPException(

@@ -61,8 +61,10 @@ export async function apiFetch<T>(
   if (!response.ok) {
     let detail = "An unexpected error occurred";
     try {
-      const errorData = (await response.json()) as { detail?: string };
-      if (errorData?.detail) detail = errorData.detail;
+      const errorData = (await response.json()) as { detail?: unknown };
+      if (errorData?.detail) {
+        detail = typeof errorData.detail === "string" ? errorData.detail : JSON.stringify(errorData.detail);
+      }
     } catch {
       detail = response.statusText || detail;
     }
@@ -90,8 +92,10 @@ export async function apiUpload<T>(
   if (!response.ok) {
     let detail = "Upload failed";
     try {
-      const errorData = (await response.json()) as { detail?: string };
-      if (errorData?.detail) detail = errorData.detail;
+      const errorData = (await response.json()) as { detail?: unknown };
+      if (errorData?.detail) {
+        detail = typeof errorData.detail === "string" ? errorData.detail : JSON.stringify(errorData.detail);
+      }
     } catch {
       detail = response.statusText || detail;
     }

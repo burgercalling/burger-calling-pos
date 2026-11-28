@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 from datetime import datetime, timezone
@@ -388,8 +389,22 @@ async def commit_bulk_import(
     existing_products = db.scalars(
         select(Product).options(selectinload(Product.prices)).where(Product.deleted_at.is_(None))
     ).all()
+    all_taken_skus = set(
+        s.upper() for s in db.scalars(select(Product.sku).where(Product.sku.isnot(None))).all() if s
+    )
     sku_map = {p.sku.upper(): p for p in existing_products if p.sku}
     name_map = {p.name.strip().lower(): p for p in existing_products}
+
+    # Pre-fetch external images concurrently to avoid HTTP request timeouts
+    sem = asyncio.Semaphore(6)
+
+    async def _fetch_with_sem(url: str | None) -> tuple[str | None, str | None]:
+        async with sem:
+            return await _resolve_local_image(url, storage)
+
+    image_results = await asyncio.gather(
+        *[_fetch_with_sem(r.image_url) for r in payload.rows]
+    )
 
     imported = 0
     updated = 0
@@ -397,7 +412,7 @@ async def commit_bulk_import(
     skipped = 0
     errors: list[str] = []
 
-    for row in payload.rows:
+    for row, (local_img, img_warn) in zip(payload.rows, image_results):
         base_price = row.dine_in_price or row.price
         if row.status == "error" or not row.name or not row.category or not base_price or base_price <= Decimal("0.00"):
             failed += 1
@@ -413,7 +428,6 @@ async def commit_bulk_import(
             db.flush()
             cat_map[cat_key] = category
 
-        local_img, img_warn = await _resolve_local_image(row.image_url, storage)
         if img_warn:
             errors.append(f"Row {row.row_number} ({row.name}): {img_warn}")
 
@@ -450,9 +464,12 @@ async def commit_bulk_import(
             _upsert_product_prices(db, existing, channel_prices)
             updated += 1
         else:
+            safe_sku = None if (sku_norm and sku_norm in all_taken_skus) else sku_norm
+            if sku_norm and safe_sku is None:
+                errors.append(f"Row {row.row_number} ({row.name}): SKU '{sku_norm}' already used by a deleted item; imported without SKU.")
             new_prod = Product(
                 category_id=category.id,
-                sku=sku_norm,
+                sku=safe_sku,
                 name=row.name.strip(),
                 description=row.description,
                 price=base_price,
@@ -466,8 +483,9 @@ async def commit_bulk_import(
             db.add(new_prod)
             db.flush()
             _upsert_product_prices(db, new_prod, channel_prices)
-            if sku_norm:
-                sku_map[sku_norm] = new_prod
+            if safe_sku:
+                sku_map[safe_sku] = new_prod
+                all_taken_skus.add(safe_sku)
             name_map[name_key] = new_prod
             imported += 1
 
@@ -554,9 +572,12 @@ async def zomato_menu_import(
             _upsert_product_prices(db, existing, zomato_prices)
             updated += 1
         else:
+            safe_sku = None if (sku_norm and sku_norm in all_taken_skus) else sku_norm
+            if sku_norm and safe_sku is None:
+                errors.append(f"Row {row.row_number} ({row.name}): SKU '{sku_norm}' already used by a deleted item; imported without SKU.")
             new_prod = Product(
                 category_id=category.id,
-                sku=sku_norm,
+                sku=safe_sku,
                 name=row.name.strip(),
                 description=row.description,
                 price=row.price,
@@ -570,8 +591,9 @@ async def zomato_menu_import(
             db.add(new_prod)
             db.flush()
             _upsert_product_prices(db, new_prod, zomato_prices)
-            if sku_norm:
-                sku_map[sku_norm] = new_prod
+            if safe_sku:
+                sku_map[safe_sku] = new_prod
+                all_taken_skus.add(safe_sku)
             name_map[name_key] = new_prod
             imported += 1
 
