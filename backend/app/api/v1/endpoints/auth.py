@@ -1,3 +1,5 @@
+from collections import defaultdict
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -13,6 +15,22 @@ from app.models.user import User, UserRole
 from app.schemas.auth import AuthResponse, LoginRequest, MessageResponse, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+_LOGIN_ATTEMPTS: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT_MAX = 15
+_RATE_LIMIT_WINDOW_SEC = 60
+
+
+def _check_login_rate_limit(request: Request) -> None:
+    ip = _client_ip(request) or "unknown"
+    now = time.monotonic()
+    recent = [t for t in _LOGIN_ATTEMPTS[ip] if now - t < _RATE_LIMIT_WINDOW_SEC]
+    if len(recent) >= _RATE_LIMIT_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please wait a minute and try again.",
+        )
+    recent.append(now)
+    _LOGIN_ATTEMPTS[ip] = recent
 
 
 def _client_ip(request: Request) -> str | None:
@@ -50,6 +68,7 @@ def outlet_login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> AuthResponse:
+    _check_login_rate_limit(request)
     username = payload.username.strip().lower()
     user = db.scalar(
         select(User)
@@ -120,6 +139,7 @@ def superadmin_login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> AuthResponse:
+    _check_login_rate_limit(request)
     username = payload.username.strip().lower()
     user = db.scalar(
         select(User).where(

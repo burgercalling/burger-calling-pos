@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, apiFetch } from "@/lib/api";
-import type { Customer, OrderReceiptPayload, OrderType, PaymentMode, TodayOrdersSummary } from "@/types/pos";
+import type { Customer, Order, OrderReceiptPayload, OrderType, PaymentMode, TodayOrdersSummary } from "@/types/pos";
 
 export interface CreateOrderInput {
   order_type: OrderType;
@@ -26,15 +26,19 @@ export function useCreateOrder() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pos", "today"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
+      qc.invalidateQueries({ queryKey: ["inventory-items"] });
+      qc.invalidateQueries({ queryKey: ["inventory-transactions"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
     },
   });
 }
 
-export function useTodayOrders() {
+export function useTodayOrders(enabled = true) {
   return useQuery<TodayOrdersSummary, ApiError>({
     queryKey: ["pos", "today"],
     queryFn: () => apiFetch<TodayOrdersSummary>("/pos/orders/today"),
+    enabled,
   });
 }
 
@@ -43,6 +47,20 @@ export function useReprintOrder() {
   return useMutation<OrderReceiptPayload, ApiError, string>({
     mutationFn: (orderId) => apiFetch<OrderReceiptPayload>(`/pos/orders/${orderId}/reprint`, { method: "POST" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pos", "today"] }),
+  });
+}
+
+export function useVoidOrder() {
+  const qc = useQueryClient();
+  return useMutation<Order, ApiError, string>({
+    mutationFn: (orderId) => apiFetch<Order>(`/pos/orders/${orderId}/void`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pos", "today"] });
+      qc.invalidateQueries({ queryKey: ["inventory-items"] });
+      qc.invalidateQueries({ queryKey: ["inventory-transactions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
   });
 }
 

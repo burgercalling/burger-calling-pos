@@ -21,6 +21,8 @@ from app.models.franchise import Franchise
 from app.models.inventory import InventoryItem, InventoryTransaction
 from app.models.order import Order, OrderItem
 from app.models.product import Product
+from app.models.product_price import ProductPrice
+from app.models.recipe import ProductRecipe
 from app.models.setting import Setting
 from app.models.stock_request import StockRequest, StockRequestItem
 from app.models.user import User, UserRole
@@ -37,6 +39,8 @@ BACKUP_TABLES: list[tuple[str, Any]] = [
     ("settings", Setting),
     ("categories", Category),
     ("products", Product),
+    ("product_prices", ProductPrice),
+    ("product_recipes", ProductRecipe),
     ("customers", Customer),
     ("inventory_items", InventoryItem),
     ("inventory_transactions", InventoryTransaction),

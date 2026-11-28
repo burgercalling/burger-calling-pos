@@ -11,6 +11,7 @@ import {
   Plus,
   Printer,
   QrCode,
+  ReceiptText,
   Search,
   ShoppingCart,
   Split,
@@ -30,11 +31,11 @@ import { Switch } from "@/components/ui/switch";
 import { useCurrentUser, useLogout } from "@/hooks/use-auth";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useCategories, useProducts } from "@/hooks/use-menu";
-import { useCreateOrder, useCustomerLookup } from "@/hooks/use-pos";
+import { useCreateOrder, useCustomerLookup, useReprintOrder, useTodayOrders, useVoidOrder } from "@/hooks/use-pos";
 import { resolveMediaUrl } from "@/lib/api";
 import { printThermalReceipt } from "@/lib/print";
 import { formatINR, getProductChannelPrice, type Product } from "@/types/menu";
-import type { OrderReceiptPayload, OrderType, PaymentMode } from "@/types/pos";
+import { ORDER_SOURCE_LABELS, type OrderReceiptPayload, type OrderType, type PaymentMode } from "@/types/pos";
 
 interface CartLine {
   product: Product;
@@ -135,6 +136,11 @@ export default function PosTerminalPage() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
+  const [todayBillsOpen, setTodayBillsOpen] = useState(false);
+  const todayOrdersQuery = useTodayOrders(todayBillsOpen);
+  const reprintOrderMutation = useReprintOrder();
+  const voidOrderMutation = useVoidOrder();
+  const canVoidOrder = currentUser?.role === "franchise_owner" || currentUser?.role === "super_admin";
 
   const [orderSource, setOrderSource] = useState<OrderType>("dine_in");
   const [externalOrderNumber, setExternalOrderNumber] = useState("");
@@ -534,6 +540,10 @@ export default function PosTerminalPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <Button type="button" size="sm" variant="outline" onClick={() => setTodayBillsOpen(true)}>
+              <ReceiptText className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">Today&apos;s Bills</span>
+            </Button>
             <div className="flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 dark:border-stone-700 dark:bg-stone-800">
               <Printer className="h-4 w-4 text-stone-600 dark:text-stone-300" />
               <span className="hidden text-xs font-semibold text-stone-700 dark:text-stone-200 sm:inline">

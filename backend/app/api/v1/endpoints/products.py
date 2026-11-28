@@ -83,7 +83,7 @@ def _parse_bool(val: object, default: bool = True) -> bool:
 def _parse_decimal(val: object) -> Decimal | None:
     if val is None:
         return None
-    s = str(val).strip().replace("₹", "").replace(",", "")
+    s = str(val).strip().replace("₹", "").replace(",", "").replace("%", "")
     if not s:
         return None
     try:
@@ -265,7 +265,7 @@ async def preview_bulk_import(
         category = _pick_field(rec, ("category", "category name"))
         name = _pick_field(rec, ("product name", "name", "item name", "title"))
         description = _pick_field(rec, ("description", "desc", "details")) or None
-        price_raw = _pick_field(rec, ("price", "selling price", "mrp"))
+        price_raw = _pick_field(rec, ("price", "selling price", "mrp", "current price"))
         dine_in_raw = _pick_field(rec, ("dine in price", "dine in", "dinein price"))
         takeaway_raw = _pick_field(rec, ("take away price", "takeaway price", "take away", "takeaway"))
         swiggy_raw = _pick_field(rec, ("swiggy price", "swiggy"))
@@ -273,8 +273,8 @@ async def preview_bulk_import(
         cost_raw = _pick_field(rec, ("cost price", "cost", "purchase price"))
         image_url = _pick_field(rec, ("image url", "image", "photo url")) or None
         avail_raw = _pick_field(rec, ("available", "is available", "status"))
-        sku_raw = _pick_field(rec, ("sku", "code", "item code")).upper() or None
-        tax_raw = _pick_field(rec, ("tax", "tax rate", "gst"))
+        sku_raw = _pick_field(rec, ("sku", "code", "item code", "catalogue id")).upper() or None
+        tax_raw = _pick_field(rec, ("tax", "tax rate", "gst", "taxes"))
         type_raw = _pick_field(rec, ("item type", "type")).lower()
 
         dine_in_price = _parse_decimal(dine_in_raw)
